@@ -1,0 +1,25 @@
+
+# Dependencies
+node_modules/
+
+# Next.js generated files
+.next/
+out/
+build/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Deployment
+.vercel/
+
+# Operating system
+.DS_Store
+Thumbs.db
+git rm --cached .env.local

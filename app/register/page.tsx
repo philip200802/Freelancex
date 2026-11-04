@@ -1,0 +1,5 @@
+import Link from "next/link";
+
+export default function RegisterPage() {
+    return <main className="page-shell"><header className="site-header"><Link className="logo" href="/"><span className="logo-mark" />FreelanceX</Link><Link className="button-quiet" href="/login">Already have an account?</Link></header><section className="auth-wrap"><div className="auth-card"><div className="eyebrow">Start with FreelanceX</div><h1>Choose the work you want more of.</h1><p className="hero-copy">Tell us what brings you here and we will shape the setup around your goals.</p><div className="role-grid"><Link className="role-card" href="/register/employer"><strong>I want to hire talent</strong><span>Find skilled professionals, purchase services, and hire for your projects.</span><span className="job-link">Create an employer account &rarr;</span></Link><Link className="role-card" href="/register/freelancer"><strong>I want to find work</strong><span>Showcase your skills, publish services, and find projects that fit.</span><span className="job-link">Create a freelancer account &rarr;</span></Link></div></div></section></main>;
+}
