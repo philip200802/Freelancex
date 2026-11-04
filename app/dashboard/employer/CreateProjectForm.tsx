@@ -1,6 +1,7 @@
 "use client";
 
 import React, { FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 const categories = ["Development", "Design", "Writing", "Marketing"] as const;
@@ -8,11 +9,13 @@ const categories = ["Development", "Design", "Writing", "Marketing"] as const;
 export default function CreateProjectForm() {
     const router = useRouter();
     const [error, setError] = React.useState("");
+    const [success, setSuccess] = React.useState("");
     const [isSubmitting, setIsSubmitting] = React.useState(false);
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         setError("");
+        setSuccess("");
         setIsSubmitting(true);
         const form = new FormData(event.currentTarget);
 
@@ -24,6 +27,7 @@ export default function CreateProjectForm() {
                 return;
             }
             event.currentTarget.reset();
+            setSuccess("Your job was published and is now available in the marketplace.");
             router.refresh();
         } catch {
             setError("Unable to reach FreelanceX. Please try again.");
@@ -32,5 +36,5 @@ export default function CreateProjectForm() {
         }
     }
 
-    return <form className="dashboard-form" onSubmit={handleSubmit}><div className="dashboard-form-heading"><div><div className="eyebrow">Start a brief</div><h2>Post a new project</h2></div><span className="form-hint">Protected payments are coming next</span></div><label>Project title<input className="filter-input" name="title" placeholder="e.g. Brand identity for a fintech startup" required /></label><label>What needs to be done?<textarea className="filter-input dashboard-textarea" name="description" placeholder="Describe the outcome, context, and what a great delivery looks like." required /></label><div className="dashboard-form-row"><label>Category<select className="filter-input" defaultValue="Development" name="category">{categories.map((category) => <option key={category}>{category}</option>)}</select></label><label>Budget (NGN)<input className="filter-input" min="1" name="amount" placeholder="250000" required type="number" /></label></div>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary" disabled={isSubmitting} type="submit">{isSubmitting ? "Publishing..." : "Publish project"}</button></form>;
+    return <form className="dashboard-form" onSubmit={handleSubmit}><div className="dashboard-form-heading"><div><div className="eyebrow">Start a brief</div><h2>Post a new project</h2></div><span className="form-hint">Protected payments are coming next</span></div><label>Project title<input className="filter-input" name="title" placeholder="e.g. Brand identity for a fintech startup" required /></label><label>What needs to be done?<textarea className="filter-input dashboard-textarea" name="description" placeholder="Describe the outcome, context, and what a great delivery looks like." required /></label><div className="dashboard-form-row"><label>Category<select className="filter-input" defaultValue="Development" name="category">{categories.map((category) => <option key={category}>{category}</option>)}</select></label><label>Budget (NGN)<input className="filter-input" min="1" name="amount" placeholder="250000" required type="number" /></label></div>{error && <p className="form-error" role="alert">{error}</p>}{success && <p className="success-message" role="status">{success} <Link href="/client/dashboard/jobs">View My Jobs</Link></p>}<button className="button button-primary" disabled={isSubmitting} type="submit">{isSubmitting ? "Publishing..." : "Publish project"}</button></form>;
 }

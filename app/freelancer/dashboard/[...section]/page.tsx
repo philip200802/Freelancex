@@ -1,6 +1,9 @@
-import DashboardEmptySection from "@/components/dashboard/DashboardEmptySection";
+import DashboardSectionPage from "@/components/dashboard/DashboardSectionPage";
 
-export default async function FreelancerDashboardSection({ params }: { params: Promise<{ section: string[] }> }) {
+export default async function FreelancerDashboardSection({ params, searchParams }: {
+    params: Promise<{ section: string[] }>;
+    searchParams: Promise<{ q?: string }>;
+}) {
     const { section } = await params;
-    return <DashboardEmptySection role="freelancer" section={section.join(" / ")} />;
+    return <DashboardSectionPage role="freelancer" section={section.join("/")} searchParams={searchParams} />;
 }
