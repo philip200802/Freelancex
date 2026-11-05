@@ -17,12 +17,14 @@ export async function GET() {
 
     try {
         await connectToDatabase();
-        const notifications = await Notification.find({ recipient: user.userId })
-            .populate("actor", "name")
-            .sort({ createdAt: -1 })
-            .limit(50)
-            .lean();
-        return jsonNoStore({ notifications, unreadCount: notifications.filter((item) => !item.readAt).length });
+        const [notifications, unreadCount] = await Promise.all([
+            Notification.find({ recipient: user.userId }).populate("actor", "name").sort({ createdAt: -1 }).limit(50).lean(),
+            Notification.countDocuments({ recipient: user.userId, $or: [{ readAt: { $exists: false } }, { readAt: null }] }),
+        ]);
+        const withActorSnapshots = notifications.map((item) => item.actorNameSnapshot
+            ? { ...item, actor: { _id: item.actor?._id, name: item.actorNameSnapshot } }
+            : item);
+        return jsonNoStore({ notifications: withActorSnapshots, unreadCount });
     } catch (error) {
         console.error("Notification listing error:", error);
         return jsonNoStore({ error: "Notifications are temporarily unavailable." }, { status: 503 });

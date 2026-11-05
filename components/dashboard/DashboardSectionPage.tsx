@@ -6,7 +6,9 @@ import ApplicationList from "@/components/dashboard/ApplicationList";
 import DashboardShell, { type DashboardRole } from "@/components/dashboard/DashboardShell";
 import MessagesPanel from "@/components/dashboard/MessagesPanel";
 import NotificationsList from "@/components/dashboard/NotificationsList";
+import PaymentsHistory from "@/components/dashboard/PaymentsHistory";
 import CreateProjectForm from "@/app/dashboard/employer/CreateProjectForm";
+import JobBoard from "@/app/jobs/JobBoard";
 import { getCurrentUser } from "@/lib/current-user";
 import { connectToDatabase } from "@/lib/mongodb";
 import Task from "@/models/Task";
@@ -40,11 +42,12 @@ function EmptyPanel({ title, message, action }: { title: string; message: string
     return <div className="dashboard-empty"><strong>{title}</strong><p>{message}</p>{action && <Link className="button button-primary" href={action.href}>{action.label}</Link>}</div>;
 }
 
-function TaskList({ jobs, emptyMessage, action }: { jobs: Array<{ _id: unknown; title: string; category: string; amount: number; status: string }>; emptyMessage: string; action?: { label: string; href: string } }) {
+function TaskList({ jobs, emptyMessage, action, role }: { jobs: Array<{ _id: unknown; title: string; category: string; amount: number; status: string }>; emptyMessage: string; action?: { label: string; href: string }; role: DashboardRole }) {
     if (!jobs.length) return <EmptyPanel title="No projects to show yet." message={emptyMessage} action={action} />;
     return <div className="dashboard-list">{jobs.map((job) => {
         const id = String(job._id);
-        return <Link className="dashboard-list-row" href={`/jobs/${id}`} key={id}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span></div><span className={`status-badge status-${job.status}`}>{job.status.replace("_", " ")}</span></Link>;
+        const href = role === "freelancer" ? `/freelancer/dashboard/projects/${id}` : `/client/dashboard/projects/${id}`;
+        return <Link className="dashboard-list-row" href={href} key={id}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span></div><span className={`status-badge status-${job.status}`}>{job.status.replace("_", " ")}</span></Link>;
     })}</div>;
 }
 
@@ -72,12 +75,22 @@ export default async function DashboardSectionPage({ role, section, searchParams
         return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title="My Jobs" description="Manage the briefs you have published and keep their status visible.">
             <div className="dashboard-toolbar"><form className="dashboard-inline-search"><input className="filter-input" defaultValue={query} name="q" placeholder="Search your jobs" /><button className="button button-primary" type="submit">Search</button></form><Link className="button button-primary" href="/client/dashboard/post-job">Post a Job</Link></div>
             <section className="dashboard-panel"><div className="dashboard-table-heading"><span>{filtered.length} of {jobs.length} jobs</span></div>
-                {filtered.length ? <div className="dashboard-table">{filtered.map((job) => <Link className="dashboard-table-row" href={`/jobs/${String(job._id)}`} key={String(job._id)}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span></div><span className="status-badge">{job.status.replace("_", " ")}</span></Link>)}</div> : <EmptyPanel title={jobs.length ? "No matching jobs." : "You haven't posted any jobs yet."} message={jobs.length ? "Try a different search term." : "Create your first job to start receiving applications."} action={{ label: "Post a Job", href: "/client/dashboard/post-job" }} />}
+                {filtered.length ? <div className="dashboard-table">{filtered.map((job) => <Link className="dashboard-table-row" href={`/client/dashboard/projects/${String(job._id)}`} key={String(job._id)}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span></div><span className="status-badge">{job.status.replace("_", " ")}</span></Link>)}</div> : <EmptyPanel title={jobs.length ? "No matching jobs." : "You haven't posted any jobs yet."} message={jobs.length ? "Try a different search term." : "Create your first job to start receiving applications."} action={{ label: "Post a Job", href: "/client/dashboard/post-job" }} />}
             </section>
         </DashboardShell>;
     }
 
-    if (section === "jobs" && role === "freelancer") redirect("/jobs");
+    if (section === "jobs" && role === "freelancer") {
+        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title="Find Jobs" description="Browse open opportunities and apply from your freelancer workspace.">
+            <JobBoard detailsHrefPrefix="/freelancer/dashboard/jobs/" />
+        </DashboardShell>;
+    }
+
+    if (section === "payments" && role === "employer") {
+        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title={details.title} description="Review payment attempts initialized through Paystack. Only real provider records are shown.">
+            <PaymentsHistory />
+        </DashboardShell>;
+    }
 
     if (section === "applications" || section === "proposals") {
         const title = role === "freelancer" ? "My Applications" : "Applications";
@@ -96,7 +109,7 @@ export default async function DashboardSectionPage({ role, section, searchParams
         return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title="Notifications" description="Updates and activity for your account."><NotificationsList role={role} /></DashboardShell>;
     }
     if (section === "profile" || section === "settings") {
-        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title={details.title} description={details.description}><AccountPanel section={section} /></DashboardShell>;
+        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title={details.title} description={details.description}><AccountPanel role={role} section={section} /></DashboardShell>;
     }
     if (role === "admin" && section === "users") {
         const users = await User.find(query ? { $or: [{ name: { $regex: query, $options: "i" } }, { email: { $regex: query, $options: "i" } }] } : {})
@@ -123,15 +136,15 @@ export default async function DashboardSectionPage({ role, section, searchParams
         else if (section === "earnings") {
             if (role !== "freelancer") redirect(role === "employer" ? "/client/dashboard" : "/admin/dashboard");
             filter.status = "completed";
-        } else if (section === "contracts") filter.status = { $in: ["funded", "in_progress", "submitted"] };
-        else filter.status = { $in: ["funded", "in_progress", "submitted", "completed"] };
+        } else if (section === "contracts") filter.status = { $in: ["awaiting_funding", "funded", "in_progress", "submitted", "revision_requested"] };
+        else filter.status = { $in: ["awaiting_funding", "funded", "in_progress", "submitted", "revision_requested", "completed"] };
 
         const jobs = await Task.find(filter).sort({ updatedAt: -1 }).lean();
         const total = jobs.filter((job) => job.status === "completed").reduce((sum, job) => sum + job.amount, 0);
         const title = section === "earnings" ? "Earnings" : section === "completed" ? "Completed Projects" : section === "contracts" ? "Active Projects" : "Projects";
         return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title={title} description={details.description}>
             {section === "earnings" && <section className="dashboard-stat-grid"><article className="dashboard-stat-card"><span>Completed project value</span><strong>{naira.format(total)}</strong><small>{jobs.length} completed projects</small></article></section>}
-            <section className="dashboard-panel"><TaskList jobs={jobs} emptyMessage={role === "freelancer" ? section === "completed" ? "No projects have been completed on your account yet." : "No projects have been assigned to you yet. Accepted and assigned projects will appear here." : "Projects connected to your account will appear here when they are assigned or completed."} action={role === "freelancer" && section !== "completed" ? { label: "Find Jobs", href: "/jobs" } : undefined} /></section>
+            <section className="dashboard-panel"><TaskList jobs={jobs} emptyMessage={role === "freelancer" ? section === "completed" ? "No projects have been completed on your account yet." : "No projects have been assigned to you yet. Accepted and assigned projects will appear here." : "Projects connected to your account will appear here when they are assigned or completed."} action={role === "freelancer" && section !== "completed" ? { label: "Find Jobs", href: "/freelancer/dashboard/jobs" } : undefined} role={role} /></section>
         </DashboardShell>;
     }
 

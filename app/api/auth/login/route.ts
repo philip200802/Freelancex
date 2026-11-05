@@ -13,12 +13,18 @@ export async function POST(request: Request) {
         if (!email || !password) {
             return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
         }
+        if (password.length > 128) {
+            return NextResponse.json({ error: "Email or password is invalid." }, { status: 401 });
+        }
 
         await connectToDatabase();
         const user = await User.findOne({ email }).select("+passwordHash +isVerified");
         const passwordMatches = user ? await bcrypt.compare(password, user.passwordHash) : false;
         if (!user || !passwordMatches) {
             return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+        }
+        if (user.isActive === false) {
+            return NextResponse.json({ error: "This account is no longer active." }, { status: 403 });
         }
         if (!user.isVerified) {
             return NextResponse.json({ success: false, code: "EMAIL_NOT_VERIFIED", message: "Please verify your email before signing in.", email: user.email }, { status: 403 });

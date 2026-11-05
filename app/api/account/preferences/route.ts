@@ -44,7 +44,7 @@ export async function PUT(request: Request) {
         const preferences = await UserPreference.findOneAndUpdate(
             { user: user.userId },
             { $set: { emailNotifications: body.emailNotifications, inAppNotifications: body.inAppNotifications, profileVisibility: body.profileVisibility } },
-            { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+            { returnDocument: "after", upsert: true, runValidators: true, setDefaultsOnInsert: true },
         ).lean();
         return jsonNoStore({ preferences });
     } catch (error) {

@@ -21,8 +21,8 @@ export default function Home() {
             <header className="site-header">
                 <Link className="logo" href="/" aria-label="FreelanceX home"><span className="logo-mark" />FreelanceX</Link>
                 <nav className="nav-links" aria-label="Main navigation">
-                    <Link href="/jobs">Find work</Link>
-                    <Link href="/jobs">Hire talent</Link>
+                    <Link href="/login">Find work</Link>
+                    <Link href="/register">Hire talent</Link>
                     <Link href="#how-it-works">How it works</Link>
                 </nav>
                 <div className="header-actions">
@@ -37,7 +37,7 @@ export default function Home() {
                     <h1>Good work deserves a <em>great match.</em></h1>
                     <p className="hero-copy">FreelanceX brings ambitious people and independent talent together, with clear milestones and protected payments from brief to finish.</p>
                     <div className="hero-actions">
-                        <Link className="button button-primary" href="/jobs">Explore projects <span aria-hidden="true">&nbsp;&rarr;</span></Link>
+                        <Link className="button button-primary" href="/login">Explore opportunities <span aria-hidden="true">&nbsp;&rarr;</span></Link>
                         <Link className="button button-quiet" href="/register">I need a freelancer</Link>
                     </div>
                     <p className="hero-note">No noise. No guesswork. Just a clear path forward.</p>
@@ -58,7 +58,7 @@ export default function Home() {
             <section className="section" id="how-it-works">
                 <div className="section-heading"><h2>Find your next move.</h2><p>From a quick fix to a defining project, find the people who can make it happen.</p></div>
                 <div className="category-grid">
-                    {categories.map((category) => <Link className="category" href="/jobs" key={category.title}><div className="category-icon">{category.icon}</div><h3>{category.title}</h3><p>{category.description}</p></Link>)}
+                    {categories.map((category) => <Link className="category" href="/register" key={category.title}><div className="category-icon">{category.icon}</div><h3>{category.title}</h3><p>{category.description}</p></Link>)}
                 </div>
             </section>
 

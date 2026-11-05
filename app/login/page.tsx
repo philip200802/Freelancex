@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { startGlobalNavigation } from "@/components/navigation/GlobalNavigationLoader";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -20,11 +21,18 @@ export default function LoginPage() {
             const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
             const result = await response.json() as { error?: string; message?: string; code?: string; email?: string; user?: { role: string } };
             if (!response.ok) {
-                if (result.code === "EMAIL_NOT_VERIFIED") { router.push(`/verify-email?email=${encodeURIComponent(result.email || email)}`); return; }
+                if (result.code === "EMAIL_NOT_VERIFIED") {
+                    const destination = `/verify-email?email=${encodeURIComponent(result.email || email)}`;
+                    startGlobalNavigation(destination);
+                    router.push(destination);
+                    return;
+                }
                 setError(result.error || "Unable to log in.");
                 return;
             }
-            router.push(result.user?.role === "employer" ? "/client/dashboard" : result.user?.role === "admin" ? "/admin/dashboard" : "/freelancer/dashboard");
+            const destination = result.user?.role === "employer" ? "/client/dashboard" : result.user?.role === "admin" ? "/admin/dashboard" : "/freelancer/dashboard";
+            startGlobalNavigation(destination);
+            router.push(destination);
         } catch {
             setError("Unable to reach FreelanceX. Please try again.");
         } finally {

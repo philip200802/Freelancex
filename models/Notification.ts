@@ -1,10 +1,13 @@
 import mongoose, { Document, Schema } from "mongoose";
 
-export type NotificationType = "application" | "application_accepted" | "application_rejected" | "message" | "system";
+export type NotificationType = "application" | "application_accepted" | "application_rejected" | "message" | "submission" | "submission_approved" | "revision_requested" | "system";
 
 export interface INotification extends Document {
     recipient: mongoose.Types.ObjectId;
     actor?: mongoose.Types.ObjectId;
+    actorNameSnapshot?: string;
+    relatedTask?: mongoose.Types.ObjectId;
+    relatedSubmission?: mongoose.Types.ObjectId;
     type: NotificationType;
     title: string;
     body: string;
@@ -17,7 +20,10 @@ export interface INotification extends Document {
 const NotificationSchema = new Schema<INotification>({
     recipient: { type: Schema.Types.ObjectId, ref: "User", required: true },
     actor: { type: Schema.Types.ObjectId, ref: "User" },
-    type: { type: String, enum: ["application", "application_accepted", "application_rejected", "message", "system"], required: true },
+    actorNameSnapshot: { type: String, trim: true },
+    relatedTask: { type: Schema.Types.ObjectId, ref: "Task" },
+    relatedSubmission: { type: Schema.Types.ObjectId, ref: "ProjectSubmission" },
+    type: { type: String, enum: ["application", "application_accepted", "application_rejected", "message", "submission", "submission_approved", "revision_requested", "system"], required: true },
     title: { type: String, required: true, trim: true, maxlength: 160 },
     body: { type: String, required: true, trim: true, maxlength: 1000 },
     href: { type: String, trim: true },
@@ -26,5 +32,9 @@ const NotificationSchema = new Schema<INotification>({
 
 NotificationSchema.index({ recipient: 1, createdAt: -1 });
 NotificationSchema.index({ recipient: 1, readAt: 1 });
+NotificationSchema.index(
+    { recipient: 1, relatedSubmission: 1, type: 1 },
+    { unique: true, partialFilterExpression: { relatedSubmission: { $type: "objectId" } } },
+);
 
 export default mongoose.models.Notification || mongoose.model<INotification>("Notification", NotificationSchema);

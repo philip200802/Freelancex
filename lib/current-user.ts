@@ -1,4 +1,6 @@
 import { cookies } from "next/headers";
+import { connectToDatabase } from "@/lib/mongodb";
+import User from "@/models/User";
 import { verifyAuthToken, type AuthToken } from "@/lib/auth";
 
 export async function getCurrentUser(): Promise<AuthToken | null> {
@@ -8,9 +10,15 @@ export async function getCurrentUser(): Promise<AuthToken | null> {
         return null;
     }
 
+    let tokenUser: AuthToken;
     try {
-        return verifyAuthToken(token);
+        tokenUser = verifyAuthToken(token);
     } catch {
         return null;
     }
+
+    await connectToDatabase();
+    const user = await User.findById(tokenUser.userId).select("role isActive").lean();
+    if (!user || user.isActive === false) return null;
+    return { userId: user._id.toString(), role: user.role };
 }

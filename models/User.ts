@@ -17,6 +17,7 @@ export interface IUser extends Document {
     termsVersion: string;
     privacyPolicyVersion: string;
     isVerified: boolean;
+    isActive: boolean;
     verificationTokenHash?: string;
     verificationTokenExpiresAt?: Date;
     consumedVerificationTokenHash?: string;
@@ -25,6 +26,15 @@ export interface IUser extends Document {
     passwordResetTokenHash?: string;
     passwordResetTokenExpiresAt?: Date;
     paystackRecipientCode?: string;
+    payoutBankCode?: string;
+    payoutBankName?: string;
+    payoutAccountName?: string;
+    payoutAccountNumber?: string;
+    payoutAccountNumberMasked?: string;
+    payoutAccountVerifiedAt?: Date;
+    rating?: number;
+    reviewCount?: number;
+    adminRemovalGuard: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -44,6 +54,7 @@ const UserSchema = new Schema<IUser>({
     termsVersion: { type: String, required: true },
     privacyPolicyVersion: { type: String, required: true },
     isVerified: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
     verificationTokenHash: { type: String, select: false },
     verificationTokenExpiresAt: { type: Date, select: false },
     consumedVerificationTokenHash: { type: String, select: false },
@@ -51,7 +62,16 @@ const UserSchema = new Schema<IUser>({
     verificationResendAt: { type: Date, select: false },
     passwordResetTokenHash: { type: String, select: false },
     passwordResetTokenExpiresAt: { type: Date, select: false },
-    paystackRecipientCode: { type: String },
+    paystackRecipientCode: { type: String, select: false },
+    payoutBankCode: { type: String, trim: true, select: false },
+    payoutBankName: { type: String, trim: true, select: false },
+    payoutAccountName: { type: String, trim: true, select: false },
+    payoutAccountNumber: { type: String, match: /^\d{10}$/, select: false },
+    payoutAccountNumberMasked: { type: String, trim: true, select: false },
+    payoutAccountVerifiedAt: { type: Date, select: false },
+    rating: { type: Number, min: 0, max: 5, default: 0 },
+    reviewCount: { type: Number, min: 0, default: 0 },
+    adminRemovalGuard: { type: Number, min: 0, default: 0, select: false },
 }, { timestamps: true });
 
 export default mongoose.models.User || mongoose.model<IUser>("User", UserSchema);

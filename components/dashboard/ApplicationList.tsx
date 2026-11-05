@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 type DashboardApplication = {
     _id?: string;
     id?: string;
-    task: { _id?: string; id?: string; title: string; category: string; amount: number; status: string };
+    task: { _id?: string; id?: string; title: string; category: string; amount: number; status: string } | null;
     employer?: { name?: string };
     freelancer?: { name?: string; email?: string };
     message: string;
@@ -14,6 +14,7 @@ type DashboardApplication = {
     legacy?: boolean;
     createdAt: string;
 };
+type ApplicationPagination = { page: number; pageSize: number; totalCount: number; totalPages: number };
 
 const money = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 
@@ -23,17 +24,21 @@ export default function ApplicationList({ role, statusFilter }: { role: "employe
     const [retry, setRetry] = useState(0);
     const [error, setError] = useState("");
     const [updating, setUpdating] = useState<string | null>(null);
+    const [pagination, setPagination] = useState<ApplicationPagination>({ page: 1, pageSize: 10, totalCount: 0, totalPages: 0 });
 
     useEffect(() => {
         const controller = new AbortController();
         async function load() {
             try {
-                const response = await fetch("/api/applications", { cache: "no-store", signal: controller.signal });
-                const result = await response.json() as { applications?: DashboardApplication[]; error?: string };
+                const params = new URLSearchParams({ page: String(pagination.page) });
+                if (statusFilter) params.set("status", statusFilter);
+                const response = await fetch(`/api/applications?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+                const result = await response.json() as { applications?: DashboardApplication[]; pagination?: ApplicationPagination; error?: string };
                 if (!response.ok) throw new Error(result.error || "Applications are unavailable.");
-                if (!Array.isArray(result.applications)) throw new Error("The applications response was invalid.");
+                if (!Array.isArray(result.applications) || !result.pagination) throw new Error("The applications response was invalid.");
                 if (controller.signal.aborted) return;
                 setApplications(result.applications);
+                setPagination(result.pagination);
                 setState("success");
             } catch (loadError) {
                 if (controller.signal.aborted) return;
@@ -43,7 +48,7 @@ export default function ApplicationList({ role, statusFilter }: { role: "employe
         }
         void load();
         return () => controller.abort();
-    }, [retry]);
+    }, [pagination.page, retry, statusFilter]);
 
     async function review(application: DashboardApplication, action: "accept" | "reject") {
         const id = application._id || application.id;
@@ -70,7 +75,7 @@ export default function ApplicationList({ role, statusFilter }: { role: "employe
 
     if (state === "loading") return <div className="dashboard-empty" role="status">Loading applications...</div>;
     if (state === "error") return <div className="dashboard-empty" role="alert"><p>{error}</p><button className="button button-primary" onClick={() => { setState("loading"); setRetry((count) => count + 1); }}>Retry</button></div>;
-    const visibleApplications = statusFilter ? applications.filter((application) => application.status === statusFilter) : applications;
+    const visibleApplications = applications;
     if (!visibleApplications.length) {
         const message = role === "employer"
             ? "No applications yet. Applications received for your jobs will appear here."
@@ -78,21 +83,24 @@ export default function ApplicationList({ role, statusFilter }: { role: "employe
                 ? "You haven't applied to any jobs yet. Browse available opportunities and submit your first application."
                 : "No application records are available.";
         const filteredMessage = statusFilter === "accepted" ? "No accepted applications yet." : statusFilter === "rejected" ? "No rejected applications." : message;
-        return <div className="dashboard-empty"><strong>{statusFilter ? `No ${statusFilter} applications.` : "No applications yet."}</strong><p>{filteredMessage}</p>{role === "freelancer" && <Link className="button button-primary" href="/jobs">Find Jobs</Link>}</div>;
+        return <div className="dashboard-empty"><strong>{statusFilter ? `No ${statusFilter} applications.` : "No applications yet."}</strong><p>{filteredMessage}</p>{role === "freelancer" && <Link className="button button-primary" href="/freelancer/dashboard/jobs">Find Jobs</Link>}</div>;
     }
 
-    return <div className="dashboard-list">
+    return <>
+        <div className="dashboard-table-heading"><span>{pagination.totalCount} application{pagination.totalCount === 1 ? "" : "s"}</span></div>
+        <div className="dashboard-list">
         {error && <p className="form-error" role="alert">{error}</p>}
         {visibleApplications.map((application) => {
-            const applicationId = application._id || application.id || `${application.task._id || application.task.id}-${application.freelancer?.name}`;
-            const taskId = application.task._id || application.task.id;
+            const task = application.task;
+            const taskId = task?._id || task?.id;
+            const applicationId = application._id || application.id || `${taskId || "removed-project"}-${application.freelancer?.name}`;
             const participantName = role === "employer" ? application.freelancer?.name : application.employer?.name;
             return <article className="dashboard-list-row" key={applicationId}>
                 <div>
-                    <strong>{application.task.title}</strong>
-                    <span>{participantName || application.task.category} &middot; {money.format(application.task.amount)}</span>
+                    <strong>{task?.title || "Project no longer available"}</strong>
+                    <span>{participantName || task?.category || "Project"}{task ? ` · ${money.format(task.amount)}` : ""}</span>
                     {application.message && <p>{application.message}</p>}
-                    {taskId && <Link className="text-link" href={`/jobs/${taskId}`}>View job</Link>}
+                    {taskId && <Link className="text-link" href={role === "freelancer" ? `/freelancer/dashboard/jobs/${taskId}` : `/client/dashboard/projects/${taskId}`}>View job</Link>}
                 </div>
                 <div>
                     <span className={`status-badge status-${application.status}`}>{application.status}</span>
@@ -103,5 +111,11 @@ export default function ApplicationList({ role, statusFilter }: { role: "employe
                 </div>
             </article>;
         })}
-    </div>;
+        </div>
+        {pagination.totalPages > 1 && <nav aria-label="Application result pages" className="job-pagination">
+            <button className="button button-quiet" disabled={pagination.page <= 1} onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))} type="button">Previous</button>
+            <span>Page {pagination.page} of {pagination.totalPages}</span>
+            <button className="button button-quiet" disabled={pagination.page >= pagination.totalPages} onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))} type="button">Next</button>
+        </nav>}
+    </>;
 }

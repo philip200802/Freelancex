@@ -45,8 +45,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
                     await session.withTransaction(async () => {
                         const updatedTask = await Task.findOneAndUpdate(
                             { _id: taskId, employer: user.userId, status: "pending_approval", freelancer: task.freelancer },
-                            { status: "funded" },
-                            { new: true, session },
+                            { status: "awaiting_funding" },
+                            { returnDocument: "after", session },
                         );
                         if (!updatedTask) throw new Error("APPLICATION_CHANGED");
                         await Application.findOneAndUpdate(
@@ -55,7 +55,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
                                 $set: { status: "accepted" },
                                 $setOnInsert: { task: taskId, employer: user.userId, freelancer: task.freelancer, message: "" },
                             },
-                            { upsert: true, new: true, setDefaultsOnInsert: true, session },
+                            { upsert: true, returnDocument: "after", setDefaultsOnInsert: true, session },
                         );
                         const otherApplications = await Application.find({
                             task: taskId,
@@ -77,17 +77,22 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
                                 href: "/freelancer/dashboard/applications",
                             })), { session });
                         }
-                        await Conversation.findOneAndUpdate(
-                            { task: taskId, participants: { $all: [user.userId, task.freelancer], $size: 2 } },
-                            { $setOnInsert: { task: taskId, participants: [user.userId, task.freelancer] } },
-                            { upsert: true, new: true, setDefaultsOnInsert: true, session },
-                        );
+                        let conversation = await Conversation.findOne({ task: taskId, participants: { $all: [user.userId, task.freelancer], $size: 2 } }).session(session).lean();
+                        if (!conversation) {
+                            try {
+                                [conversation] = await Conversation.create([{ task: taskId, participants: [user.userId, task.freelancer] }], { session });
+                            } catch (conversationError) {
+                                const duplicateError = conversationError as { code?: number };
+                                if (duplicateError.code !== 11000) throw conversationError;
+                                conversation = await Conversation.findOne({ task: taskId, participants: { $all: [user.userId, task.freelancer], $size: 2 } }).session(session).lean();
+                            }
+                        }
                         await Notification.create([{
                             recipient: task.freelancer,
                             actor: user.userId,
                             type: "application_accepted",
                             title: "Application accepted",
-                            body: "Your application was accepted. The project is now in your active work.",
+                            body: "Your application was accepted. The client must fund the project before work can begin.",
                             href: "/freelancer/dashboard/contracts",
                         }], { session });
                     });
@@ -106,7 +111,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
                         const updatedTask = await Task.findOneAndUpdate(
                             { _id: taskId, employer: user.userId, status: "pending_approval", freelancer: task.freelancer },
                             { $set: { status: "open" }, $unset: { freelancer: 1 } },
-                            { new: true, session },
+                            { returnDocument: "after", session },
                         );
                         if (!updatedTask) throw new Error("APPLICATION_CHANGED");
                         await Application.findOneAndUpdate(
@@ -115,7 +120,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
                                 $set: { status: "rejected" },
                                 $setOnInsert: { task: taskId, employer: user.userId, freelancer: task.freelancer, message: "" },
                             },
-                            { upsert: true, new: true, setDefaultsOnInsert: true, session },
+                            { upsert: true, returnDocument: "after", setDefaultsOnInsert: true, session },
                         );
                         await Notification.create([{
                             recipient: task.freelancer,
@@ -167,8 +172,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
                 await session.withTransaction(async () => {
                     const task = await Task.findOneAndUpdate(
                         { _id: application.task, employer: user.userId, status: "open", $or: [{ freelancer: { $exists: false } }, { freelancer: null }] },
-                        { freelancer: application.freelancer, status: "funded" },
-                        { new: true, session },
+                        { freelancer: application.freelancer, status: "awaiting_funding" },
+                        { returnDocument: "after", session },
                     );
                     if (!task) throw new Error("JOB_NOT_AVAILABLE");
 
@@ -199,7 +204,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
                         actor: user.userId,
                         type: "application_accepted",
                         title: "Application accepted",
-                        body: "Your application was accepted. The project is now in your active work.",
+                        body: "Your application was accepted. The client must fund the project before work can begin.",
                         href: "/freelancer/dashboard/contracts",
                     }], { session });
                 });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { startGlobalNavigation } from "@/components/navigation/GlobalNavigationLoader";
 
 export default function VerifyPage() {
     return <Suspense fallback={<main className="page-shell"><section className="auth-wrap"><div className="auth-card"><p className="muted-copy">Verifying your email...</p></div></section></main>}><VerifyContent /></Suspense>;
@@ -13,7 +14,7 @@ function VerifyContent() {
     const params = useSearchParams();
     const router = useRouter();
     const token = params.get("token");
-    const [message, setMessage] = useState("Verifying your email...");
+    const [message] = useState("Verifying your email...");
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -21,7 +22,11 @@ function VerifyContent() {
         fetch(`/api/auth/verify?token=${encodeURIComponent(token)}`).then(async (response) => {
             const result = await response.json() as { message?: string; error?: string; alreadyVerified?: boolean; welcomeEmailPending?: boolean };
             if (!response.ok) setError(result.error || "This verification link is invalid.");
-            else router.replace(`/email-verified?status=${result.alreadyVerified ? "already" : "success"}${result.welcomeEmailPending ? "&welcome=pending" : ""}`);
+            else {
+                const destination = `/email-verified?status=${result.alreadyVerified ? "already" : "success"}${result.welcomeEmailPending ? "&welcome=pending" : ""}`;
+                startGlobalNavigation(destination);
+                router.replace(destination);
+            }
         }).catch(() => setError("Unable to verify your email right now."));
     }, [router, token]);
 

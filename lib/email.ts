@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { passwordResetEmail, verificationEmail, welcomeEmail } from "@/lib/email/templates";
+import { accountRemovedEmail, newJobAlertEmail, passwordResetEmail, verificationEmail, welcomeEmail } from "@/lib/email/templates";
 
 type EmailMessage = { to: string; subject: string; html: string; text: string };
 
@@ -50,4 +50,32 @@ export async function sendWelcomeEmail({ name, email, signInUrl }: { name: strin
 
 export async function sendPasswordResetEmail({ email, resetUrl }: { email: string; resetUrl: string }) {
     await sendEmail({ to: email, subject: "Reset your FreelanceX password", html: passwordResetEmail({ resetUrl }), text: `Reset your FreelanceX password: ${resetUrl}` });
+}
+
+export async function sendNewJobAlertEmail({ email, freelancerName, jobTitle, description, budget, category, jobUrl }: { email: string; freelancerName: string; jobTitle: string; description: string; budget: number; category: string; jobUrl: string }) {
+    await sendEmail({
+        to: email,
+        subject: `New project opportunity: ${jobTitle}`,
+        html: newJobAlertEmail({ freelancerName, jobTitle, description, budget, category, jobUrl }),
+        text: `New project opportunity: ${jobTitle}. Budget: ${new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(budget)}. View it here: ${jobUrl}`,
+    });
+}
+
+export async function sendAccountRemovedEmail({ email, name, reason }: { email: string; name: string; reason?: string }) {
+    const supportEmail = process.env.SUPPORT_EMAIL?.trim();
+    const subject = "Your FreelanceX Account Has Been Removed";
+    const text = [
+        `Hello ${name}, your account has been permanently removed by FreelanceX platform administration.`,
+        "This account can no longer be used to sign in.",
+        reason ? `Reason provided: ${reason}` : "",
+        supportEmail
+            ? `If you believe this action was made in error, contact FreelanceX support at ${supportEmail}.`
+            : "If you believe this action was made in error, please contact FreelanceX support through the support channel you used to reach us.",
+    ].filter(Boolean).join("\n\n");
+    await sendEmail({
+        to: email,
+        subject,
+        html: accountRemovedEmail({ name, reason, supportEmail }),
+        text,
+    });
 }

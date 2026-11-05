@@ -26,7 +26,7 @@ export async function PATCH(_request: Request, context: { params: Promise<{ noti
         const notification = await Notification.findOneAndUpdate(
             { _id: notificationId, recipient: user.userId },
             { readAt: new Date() },
-            { new: true },
+            { returnDocument: "after" },
         ).select("_id readAt");
         if (!notification) return jsonNoStore({ error: "Notification not found." }, { status: 404 });
         return jsonNoStore({ notification: { id: notification.id, readAt: notification.readAt } });

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { dashboardNotificationsUpdatedEvent } from "@/lib/dashboard-events";
 
 type DashboardNotification = { _id?: string; id?: string; title: string; body: string; href?: string; readAt?: string | null; createdAt: string };
 
@@ -41,6 +42,7 @@ export default function NotificationsList({ role }: { role: "employer" | "freela
             return;
         }
         setNotifications((current) => current.map((item) => (item._id || item.id) === id ? { ...item, readAt: new Date().toISOString() } : item));
+        window.dispatchEvent(new Event(dashboardNotificationsUpdatedEvent));
     }
 
     if (state === "loading") return <div className="dashboard-empty" role="status">Loading notifications...</div>;
