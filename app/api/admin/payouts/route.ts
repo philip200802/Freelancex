@@ -5,10 +5,12 @@ import { connectToDatabase } from "@/lib/mongodb";
 import AdminActivityLog from "@/models/AdminActivityLog";
 import BankAccount from "@/models/BankAccount";
 import ManualPayout from "@/models/ManualPayout";
+import Notification from "@/models/Notification";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import ProjectSubmission from "@/models/ProjectSubmission";
 import Task from "@/models/Task";
 import User from "@/models/User";
+import { sendWorkflowEmailSafely } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +71,7 @@ export async function GET(request: Request) {
                     .sort({ verifiedAt: -1 })
                     .lean(),
                 ProjectSubmission.find({ task: { $in: completedTaskIds }, status: "approved" })
-                    .select("task freelancer reviewedAt")
+                    .select("task freelancer reviewedAt message links attachments")
                     .lean(),
                 BankAccount.find({ user: { $in: completedTasks.map((task) => task.freelancer) }, verificationStatus: "verified", verifiedAt: { $exists: true } })
                     .select("user bankName bankCode accountName accountNumberLast4 verificationStatus")
@@ -86,6 +88,9 @@ export async function GET(request: Request) {
         const approvedSubmissionsByAssignment = new Set(
             approvedSubmissions.map((submission) => `${submission.task.toString()}:${submission.freelancer.toString()}`),
         );
+        const approvedSubmissionByAssignment = new Map(
+            approvedSubmissions.map((submission) => [`${submission.task.toString()}:${submission.freelancer.toString()}`, submission]),
+        );
         const bankByUser = new Map(verifiedBankAccounts.map((bank) => [bank.user.toString(), bank]));
         const paidTaskIds = new Set(existingPayouts.map((payout) => payout.task.toString()));
         const nameByUser = new Map(admins.map((user) => [user._id.toString(), user.name]));
@@ -93,6 +98,7 @@ export async function GET(request: Request) {
             const taskId = task._id.toString();
             const payment = paymentByTask.get(taskId);
             const bank = task.freelancer ? bankByUser.get(task.freelancer.toString()) : undefined;
+            const approvedSubmission = task.freelancer ? approvedSubmissionByAssignment.get(`${taskId}:${task.freelancer.toString()}`) : undefined;
             if (
                 !task.freelancer ||
                 !payment ||
@@ -100,6 +106,7 @@ export async function GET(request: Request) {
                 payment.amount !== task.amount ||
                 payment.amountSubunit !== Math.round(task.amount * 100) ||
                 !approvedSubmissionsByAssignment.has(`${taskId}:${task.freelancer.toString()}`) ||
+                !approvedSubmission ||
                 !bank ||
                 paidTaskIds.has(taskId)
             ) return [];
@@ -114,6 +121,17 @@ export async function GET(request: Request) {
                 accountName: bank.accountName,
                 maskedAccountNumber: `••••••${bank.accountNumberLast4}`,
                 paymentVerifiedAt: payment.verifiedAt || null,
+                approvedDeliverables: {
+                    message: approvedSubmission.message,
+                    links: approvedSubmission.links,
+                    attachments: approvedSubmission.attachments.map((attachment: { fileName: string; url: string; fileType: string; fileSize: number }) => ({
+                        fileName: attachment.fileName,
+                        url: attachment.url,
+                        fileType: attachment.fileType,
+                        fileSize: attachment.fileSize,
+                    })),
+                    reviewedAt: approvedSubmission.reviewedAt || null,
+                },
             }];
         });
 
@@ -244,6 +262,8 @@ export async function POST(request: Request) {
                 payout = {
                     id: createdPayout._id.toString(),
                     taskId: task._id.toString(),
+                    taskTitle: task.title,
+                    freelancerId: task.freelancer.toString(),
                     freelancerName: freelancer.name,
                     bankName: bank.bankName,
                     accountName: bank.accountName,
@@ -269,6 +289,43 @@ export async function POST(request: Request) {
             throw error;
         } finally {
             await session.endSession();
+        }
+        if (payout) {
+            try {
+                const freelancer = await User.findById(payout.freelancerId).select("name email isVerified").lean();
+                await Notification.updateOne(
+                    { recipient: payout.freelancerId, eventKey: `manual-payout:${payout.id}:recorded` },
+                    { $setOnInsert: {
+                        recipient: payout.freelancerId,
+                        recipientRole: "freelancer",
+                        type: "payout_recorded",
+                        title: "Freelancer payout recorded",
+                        body: `A manual payout for "${payout.taskTitle}" has been recorded as completed.`,
+                        relatedTask: payout.taskId,
+                        eventKey: `manual-payout:${payout.id}:recorded`,
+                        href: `/freelancer/dashboard/projects/${payout.taskId}`,
+                    } },
+                    { upsert: true },
+                );
+                await sendWorkflowEmailSafely("manual_payout_recorded", freelancer, {
+                    subject: "FreelanceX — Your project payout was recorded.",
+                    heading: "Project payout recorded",
+                    message: "The platform administrator recorded a completed manual payout for your approved project.",
+                    details: [
+                        { label: "Project", value: String(payout.taskTitle) },
+                        { label: "Amount", value: new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 2 }).format(Number(payout.amount)) },
+                        { label: "Transfer reference", value: String(payout.transferReference) },
+                        { label: "Transfer date", value: new Date(String(payout.transferredAt)).toLocaleString("en-NG", { timeZone: "UTC" }) + " UTC" },
+                    ],
+                    actionPath: `/freelancer/dashboard/projects/${payout.taskId}`,
+                    actionLabel: "View project",
+                });
+            } catch (notificationError) {
+                console.error("Manual payout was recorded, but freelancer notification could not be saved.", {
+                    errorName: notificationError instanceof Error ? notificationError.name : "UnknownError",
+                    message: notificationError instanceof Error ? notificationError.message.slice(0, 300) : "Unknown failure",
+                });
+            }
         }
         return jsonNoStore({ message: "Manual payout recorded as completed.", payout }, { status: 201 });
     } catch (error) {

@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { accountRemovedEmail, newJobAlertEmail, passwordResetEmail, verificationEmail, welcomeEmail } from "@/lib/email/templates";
+import { accountRemovedEmail, newJobAlertEmail, passwordResetEmail, verificationEmail, welcomeEmail, workflowEmail } from "@/lib/email/templates";
 
 type EmailMessage = { to: string; subject: string; html: string; text: string };
 
@@ -76,6 +76,38 @@ export async function sendAccountRemovedEmail({ email, name, reason }: { email: 
         to: email,
         subject,
         html: accountRemovedEmail({ name, reason, supportEmail }),
+        text,
+    });
+}
+
+export async function sendWorkflowEmail({
+    to,
+    subject,
+    heading,
+    recipientName,
+    message,
+    details,
+    actionUrl,
+    actionLabel,
+}: {
+    to: string;
+    subject: string;
+    heading: string;
+    recipientName: string;
+    message: string;
+    details: Array<{ label: string; value: string }>;
+    actionUrl: string;
+    actionLabel: string;
+}) {
+    const text = [
+        `Hi ${recipientName}, ${message}`,
+        ...details.map(({ label, value }) => `${label}: ${value}`),
+        `${actionLabel}: ${actionUrl}`,
+    ].join("\n\n");
+    await sendEmail({
+        to,
+        subject,
+        html: workflowEmail({ heading, recipientName, message, details, actionUrl, actionLabel }),
         text,
     });
 }

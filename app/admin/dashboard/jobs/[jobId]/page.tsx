@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import DashboardShell from "@/components/dashboard/DashboardShell";
+import ProjectSubmissions from "@/components/projects/ProjectSubmissions";
 import { getCurrentUser } from "@/lib/current-user";
 import { connectToDatabase } from "@/lib/mongodb";
 import Application from "@/models/Application";
@@ -56,7 +57,7 @@ export default async function AdminJobDetailsPage({ params }: { params: Promise<
     const employer = job.employer ? usersById.get(job.employer.toString()) : null;
     const freelancer = job.freelancer ? usersById.get(job.freelancer.toString()) : null;
 
-    return <DashboardShell role="admin" userName={admin.name} userEmail={admin.email} title="Job Details" description="Review the job record, related applications and recorded payments.">
+    return <DashboardShell role="admin" userName={admin.name} userEmail={admin.email} title="Job Details" description="Review the job record, related applications, project submissions and recorded payments.">
         <Link className="button button-quiet admin-job-back-link" href="/admin/dashboard/jobs"><ArrowLeft aria-hidden="true" size={16} />Back to jobs</Link>
         <div className="admin-job-details-grid">
             <section className="dashboard-panel admin-job-details-panel">
@@ -102,5 +103,6 @@ export default async function AdminJobDetailsPage({ params }: { params: Promise<
                 </article>)}</div> : <div className="dashboard-empty"><strong>No payment records.</strong><p>Payment transactions associated with this job will appear here.</p></div>}
             </section>
         </div>
+        <ProjectSubmissions projectId={job._id.toString()} role="admin" projectStatus={job.status} />
     </DashboardShell>;
 }

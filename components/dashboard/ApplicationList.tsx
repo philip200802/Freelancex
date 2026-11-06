@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type DashboardApplication = {
@@ -19,6 +20,7 @@ type ApplicationPagination = { page: number; pageSize: number; totalCount: numbe
 const money = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 
 export default function ApplicationList({ role, statusFilter }: { role: "employer" | "freelancer" | "admin"; statusFilter?: DashboardApplication["status"] }) {
+    const router = useRouter();
     const [applications, setApplications] = useState<DashboardApplication[]>([]);
     const [state, setState] = useState<"loading" | "success" | "error">("loading");
     const [retry, setRetry] = useState(0);
@@ -61,10 +63,15 @@ export default function ApplicationList({ role, statusFilter }: { role: "employe
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action }),
             });
-            const result = await response.json() as { error?: string; application?: { status: DashboardApplication["status"] } };
+            const result = await response.json() as { error?: string; redirectTo?: string; application?: { status: DashboardApplication["status"] } };
             if (!response.ok) throw new Error(result.error || "Application could not be updated.");
+            if (action === "accept") {
+                if (!result.redirectTo?.startsWith("/client/dashboard/projects/")) throw new Error("Application was accepted, but the project funding page could not be opened.");
+                router.push(result.redirectTo);
+                return;
+            }
             setApplications((current) => current.map((item) => item._id === id || item.id === id
-                ? { ...item, status: result.application?.status ?? (action === "accept" ? "accepted" : "rejected") }
+                ? { ...item, status: result.application?.status ?? "rejected" }
                 : item));
         } catch (reviewError) {
             setError(reviewError instanceof Error ? reviewError.message : "Application could not be updated.");

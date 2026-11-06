@@ -12,6 +12,12 @@ type EligibleProject = {
     accountName: string;
     maskedAccountNumber: string;
     paymentVerifiedAt: string | null;
+    approvedDeliverables: {
+        message: string;
+        links: string[];
+        attachments: Array<{ fileName: string; url: string; fileType: string; fileSize: number }>;
+        reviewedAt: string | null;
+    };
 };
 type Payout = {
     id: string;
@@ -118,6 +124,12 @@ export default function AdminPayoutsPage() {
                         <strong>{project.taskTitle}</strong>
                         <span>{project.freelancerName} · {project.bankName} · {project.accountName}</span>
                         <small>{project.maskedAccountNumber} · {money.format(project.amount)} · Payment verified {project.paymentVerifiedAt ? formatDate(project.paymentVerifiedAt) : "date unavailable"}</small>
+                        <div className="admin-approved-deliverables">
+                            <strong>Approved deliverables</strong>
+                            <p>{project.approvedDeliverables.message}</p>
+                            {project.approvedDeliverables.attachments.map((file) => <a href={file.url} key={file.url} rel="noreferrer" target="_blank">{file.fileName}</a>)}
+                            {project.approvedDeliverables.links.map((link) => <a href={link} key={link} rel="noreferrer" target="_blank">{new URL(link).hostname}</a>)}
+                        </div>
                         <form className="admin-payout-form" onSubmit={(event) => void recordPayout(event, project)}>
                             <label>Manual transfer reference<input className="filter-input" maxLength={160} required value={transferReferences[project.taskId] || ""} onChange={(event) => setTransferReferences((current) => ({ ...current, [project.taskId]: event.target.value }))} /></label>
                             <label>Receipt URL (optional)<input className="filter-input" maxLength={2048} type="url" value={receiptUrls[project.taskId] || ""} onChange={(event) => setReceiptUrls((current) => ({ ...current, [project.taskId]: event.target.value }))} /></label>

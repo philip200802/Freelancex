@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { connectToDatabase } from "@/lib/mongodb";
-import { initializePaystackTransaction, PaystackConfigurationError, PaystackRequestError } from "@/lib/payments/paystack";
+import { assertPaystackTestModeConfigured, initializePaystackTransaction, PaystackConfigurationError, PaystackRequestError } from "@/lib/payments/paystack";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import Task from "@/models/Task";
 import User from "@/models/User";
@@ -44,9 +44,30 @@ export async function POST(request: Request) {
     const projectId = typeof body.projectId === "string" ? body.projectId : "";
     if (!mongoose.Types.ObjectId.isValid(projectId)) return jsonNoStore({ error: "Project not found." }, { status: 404 });
 
+    try {
+        assertPaystackTestModeConfigured();
+    } catch (error) {
+        if (error instanceof PaystackConfigurationError) {
+            return jsonNoStore({
+                success: false,
+                code: error.reason === "missing_secret" ? "PAYSTACK_TEST_KEY_MISSING" : "PAYSTACK_TEST_KEY_REQUIRED",
+                error: error.reason === "missing_secret"
+                    ? "Paystack test mode is not configured. Set PAYSTACK_SECRET_KEY to a test key."
+                    : "Project funding only accepts a Paystack test key. Configure an sk_test_ key.",
+                retryable: false,
+            }, { status: 503 });
+        }
+        throw error;
+    }
+
     const baseUrl = appBaseUrl();
-    if (!process.env.PAYSTACK_SECRET_KEY || !baseUrl) {
-        return jsonNoStore({ error: "Online project funding is not configured. Contact the platform administrator." }, { status: 503 });
+    if (!baseUrl) {
+        return jsonNoStore({
+            success: false,
+            code: "PAYMENT_CALLBACK_URL_NOT_CONFIGURED",
+            error: "Online project funding requires a valid NEXT_PUBLIC_APP_URL. Configure it and restart the server.",
+            retryable: false,
+        }, { status: 503 });
     }
 
     try {
@@ -131,7 +152,7 @@ export async function POST(request: Request) {
                 email: employer.email,
                 amountSubunit: payment.amountSubunit,
                 reference: payment.reference,
-                callbackUrl: `${baseUrl}/api/payments/paystack/callback`,
+                callbackUrl: `${baseUrl}/client/dashboard/payments/callback`,
                 metadata: { projectId: task._id.toString(), transactionReference: payment.reference },
             });
             await PaymentTransaction.updateOne(
@@ -147,16 +168,41 @@ export async function POST(request: Request) {
                 return jsonNoStore({ error: "Paystack could not initialize this payment. You can try again." }, { status: 502 });
             }
             if (error instanceof PaystackConfigurationError) {
-                return jsonNoStore({ error: error.message }, { status: 503 });
+                return jsonNoStore({
+                    success: false,
+                    code: error.reason === "missing_secret" ? "PAYSTACK_TEST_KEY_MISSING" : "PAYSTACK_TEST_KEY_REQUIRED",
+                    error: error.reason === "missing_secret"
+                        ? "Paystack test mode is not configured. Set PAYSTACK_SECRET_KEY to a test key."
+                        : "Project funding only accepts a Paystack test key. Configure an sk_test_ key.",
+                    retryable: false,
+                }, { status: 503 });
             }
+            const diagnosticId = randomUUID();
             console.error("Paystack transaction initialization outcome is uncertain.", {
-                reference: payment.reference,
+                diagnosticId,
+                operation: "transaction/initialize",
                 errorName: error instanceof Error ? error.name : "UnknownError",
             });
-            return jsonNoStore({ error: "Payment initialization could not be confirmed. Do not retry repeatedly; refresh this page shortly." }, { status: 503 });
+            return jsonNoStore({
+                success: false,
+                code: "PAYSTACK_INITIALIZATION_UNCONFIRMED",
+                error: "Payment initialization could not be confirmed. Do not retry repeatedly; refresh this page shortly.",
+                retryable: false,
+                diagnosticId,
+            }, { status: 503 });
         }
     } catch (error) {
-        console.error("Payment initialization error:", error);
-        return jsonNoStore({ error: "The payment could not be initialized." }, { status: 503 });
+        const diagnosticId = randomUUID();
+        console.error("Payment initialization operation failed.", {
+            diagnosticId,
+            errorName: error instanceof Error ? error.name : "UnknownError",
+        });
+        return jsonNoStore({
+            success: false,
+            code: "PAYMENT_INITIALIZATION_INTERNAL_ERROR",
+            error: "The payment could not be initialized. Contact support with the diagnostic ID.",
+            retryable: false,
+            diagnosticId,
+        }, { status: 503 });
     }
 }

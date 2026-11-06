@@ -3,6 +3,7 @@
 import React, { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useRef } from "react";
 
 const categories = ["Development", "Design", "Writing", "Marketing"] as const;
 
@@ -11,27 +12,38 @@ export default function CreateProjectForm() {
     const [error, setError] = React.useState("");
     const [success, setSuccess] = React.useState("");
     const [isSubmitting, setIsSubmitting] = React.useState(false);
+    const submissionInFlight = useRef(false);
+    const idempotencyKey = useRef("");
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         setError("");
         setSuccess("");
+        if (submissionInFlight.current) return;
+        submissionInFlight.current = true;
+        if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
         setIsSubmitting(true);
-        const form = new FormData(event.currentTarget);
+        const formElement = event.currentTarget;
+        const form = new FormData(formElement);
 
         try {
-            const response = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: form.get("title"), description: form.get("description"), amount: Number(form.get("amount")), category: form.get("category") }) });
-            const result = await response.json() as { error?: string };
+            const response = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey.current }, body: JSON.stringify({ title: form.get("title"), description: form.get("description"), amount: Number(form.get("amount")), category: form.get("category") }) });
+            const result = await response.json() as { error?: string; task?: { _id?: string } };
             if (!response.ok) {
                 setError(result.error || "Unable to publish this project.");
                 return;
             }
-            event.currentTarget.reset();
+            if (!result.task?._id) throw new Error("The project was created but the response was incomplete. Refresh My Jobs to confirm.");
+            idempotencyKey.current = "";
+            formElement.reset();
             setSuccess("Your job was published and is now available in the marketplace.");
             router.refresh();
-        } catch {
-            setError("Unable to reach FreelanceX. Please try again.");
+        } catch (requestError) {
+            setError(requestError instanceof TypeError
+                ? "We could not confirm whether your job was published. Submit again to safely check."
+                : requestError instanceof Error ? requestError.message : "The job could not be confirmed. Submit again to safely check.");
         } finally {
+            submissionInFlight.current = false;
             setIsSubmitting(false);
         }
     }

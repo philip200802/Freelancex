@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { Bell, BriefcaseBusiness, CheckCircle2, FileText, MessageCircle, Settings, Star, Wallet } from "lucide-react";
 import AccountPanel from "@/components/dashboard/AccountPanel";
 import ApplicationList from "@/components/dashboard/ApplicationList";
+import ClientJobsManager from "@/components/dashboard/ClientJobsManager";
+import AdminDisputesPage from "@/components/dashboard/AdminDisputesPage";
+import DisputesDashboard from "@/components/dashboard/DisputesDashboard";
 import DashboardShell, { type DashboardRole } from "@/components/dashboard/DashboardShell";
 import MessagesPanel from "@/components/dashboard/MessagesPanel";
 import NotificationsList from "@/components/dashboard/NotificationsList";
@@ -33,7 +36,7 @@ const pageDetails: Record<string, { title: string; description: string; icon: ty
     freelancers: { title: "Hired Freelancers", description: "Review freelancers whose applications you accepted.", icon: BriefcaseBusiness },
     payments: { title: "Payments", description: "Payment history is unavailable until transaction records are connected.", icon: Wallet },
     transactions: { title: "Transactions", description: "Transaction records are not yet connected to this application.", icon: Wallet },
-    disputes: { title: "Disputes & Reports", description: "Dispute records are not yet connected to this application.", icon: CheckCircle2 },
+    disputes: { title: "Disputes & Reports", description: "Review project disputes, evidence, party responses, payment status, and recorded resolutions.", icon: CheckCircle2 },
     categories: { title: "Categories & Skills", description: "Category administration is not yet connected to this application.", icon: Settings },
     activity: { title: "Activity Logs", description: "Activity logs are not yet recorded in this application.", icon: FileText },
 };
@@ -69,14 +72,9 @@ export default async function DashboardSectionPage({ role, section, searchParams
         </DashboardShell>;
     }
 
-    if (section === "jobs" && role === "employer") {
-        const jobs = await Task.find({ employer: user.userId }).sort({ createdAt: -1 }).lean();
-        const filtered = query ? jobs.filter((job) => `${job.title} ${job.description} ${job.category}`.toLowerCase().includes(query)) : jobs;
-        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title="My Jobs" description="Manage the briefs you have published and keep their status visible.">
-            <div className="dashboard-toolbar"><form className="dashboard-inline-search"><input className="filter-input" defaultValue={query} name="q" placeholder="Search your jobs" /><button className="button button-primary" type="submit">Search</button></form><Link className="button button-primary" href="/client/dashboard/post-job">Post a Job</Link></div>
-            <section className="dashboard-panel"><div className="dashboard-table-heading"><span>{filtered.length} of {jobs.length} jobs</span></div>
-                {filtered.length ? <div className="dashboard-table">{filtered.map((job) => <Link className="dashboard-table-row" href={`/client/dashboard/projects/${String(job._id)}`} key={String(job._id)}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span></div><span className="status-badge">{job.status.replace("_", " ")}</span></Link>)}</div> : <EmptyPanel title={jobs.length ? "No matching jobs." : "You haven't posted any jobs yet."} message={jobs.length ? "Try a different search term." : "Create your first job to start receiving applications."} action={{ label: "Post a Job", href: "/client/dashboard/post-job" }} />}
-            </section>
+    if ((section === "jobs" || section === "projects") && role === "employer") {
+        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title="My Jobs" description="Manage your job postings and track their progress.">
+            <ClientJobsManager />
         </DashboardShell>;
     }
 
@@ -122,6 +120,16 @@ export default async function DashboardSectionPage({ role, section, searchParams
             <section className="dashboard-panel"><div className="dashboard-table">{users.length ? users.map((account) => <div className="dashboard-table-row" key={String(account._id)}><div><strong>{account.name}</strong><span>{account.email}</span></div><span className="status-badge">{account.role} &middot; {account.isVerified ? "verified" : "unverified"}</span></div>) : <EmptyPanel title="No users found." message="Registered accounts matching this search will appear here." />}</div></section>
         </DashboardShell>;
     }
+    if (role === "admin" && section === "disputes") {
+        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title={details.title} description={details.description}>
+            <AdminDisputesPage />
+        </DashboardShell>;
+    }
+    if (section === "disputes" && (role === "employer" || role === "freelancer")) {
+        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title="Disputes" description="Review project concerns, share evidence, and communicate with the other parties.">
+            <DisputesDashboard role={role} />
+        </DashboardShell>;
+    }
     if (role === "admin" && (section === "employers" || section === "freelancers")) {
         const accountRole = section === "employers" ? "employer" : "freelancer";
         const users = await User.find({ role: accountRole }).select("name email isVerified createdAt").sort({ createdAt: -1 }).limit(100).lean();
@@ -136,8 +144,8 @@ export default async function DashboardSectionPage({ role, section, searchParams
         else if (section === "earnings") {
             if (role !== "freelancer") redirect(role === "employer" ? "/client/dashboard" : "/admin/dashboard");
             filter.status = "completed";
-        } else if (section === "contracts") filter.status = { $in: ["awaiting_funding", "funded", "in_progress", "submitted", "revision_requested"] };
-        else filter.status = { $in: ["awaiting_funding", "funded", "in_progress", "submitted", "revision_requested", "completed"] };
+        }         else if (section === "contracts") filter.status = { $in: ["awaiting_funding", "funded", "in_progress", "submitted", "revision_requested", "disputed"] };
+        else filter.status = { $in: ["awaiting_funding", "funded", "in_progress", "submitted", "revision_requested", "disputed", "completed"] };
 
         const jobs = await Task.find(filter).sort({ updatedAt: -1 }).lean();
         const total = jobs.filter((job) => job.status === "completed").reduce((sum, job) => sum + job.amount, 0);

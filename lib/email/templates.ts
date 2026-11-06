@@ -44,3 +44,24 @@ export function accountRemovedEmail({ name, reason, supportEmail }: { name: stri
     const reasonCopy = reason ? `<p style="font-size:14px;line-height:1.6;color:#475569;"><strong>Reason provided:</strong> ${escapeHtml(reason)}</p>` : "";
     return layout(`<h2 style="color:#0F5132;margin-top:0;">Your FreelanceX Account Has Been Removed</h2><p style="font-size:14px;line-height:1.6;color:#475569;">Hello ${escapeHtml(name)}, your account has been permanently removed by FreelanceX platform administration. This account can no longer be used to sign in.</p>${reasonCopy}<p style="font-size:14px;line-height:1.6;color:#475569;">${supportCopy}</p>`);
 }
+
+export function workflowEmail({
+    heading,
+    recipientName,
+    message,
+    details,
+    actionUrl,
+    actionLabel,
+}: {
+    heading: string;
+    recipientName: string;
+    message: string;
+    details: Array<{ label: string; value: string }>;
+    actionUrl: string;
+    actionLabel: string;
+}) {
+    const detailRows = details.map(({ label, value }) =>
+        `<p style="font-size:14px;line-height:1.6;color:#475569;margin:8px 0;"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`,
+    ).join("");
+    return layout(`<h2 style="color:#0F5132;margin-top:0;">${escapeHtml(heading)}</h2><p style="font-size:14px;line-height:1.6;color:#475569;">Hi ${escapeHtml(recipientName)}, ${escapeHtml(message)}</p>${detailRows}${button(actionUrl, escapeHtml(actionLabel))}`);
+}

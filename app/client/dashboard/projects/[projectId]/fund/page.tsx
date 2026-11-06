@@ -86,7 +86,7 @@ export default function ProjectFundingPage() {
                 <aside className="detail-aside">
                     <h2>Funding summary</h2>
                     <p className="detail-budget">{money.format(project.amount)}</p>
-                    <p className="muted-copy">The project status changes only after Paystack confirms the payment. Do not retry if checkout reports an uncertain result; check payment history or contact support.</p>
+                    <p className="muted-copy">The project status changes only after Paystack confirms the payment. If a payment fails, you can retry safely; an existing pending checkout will be reused.</p>
                     {error && <p className="form-error" role="alert">{error}</p>}
                     {project.status === "awaiting_funding"
                         ? <button className="button button-primary" disabled={isSubmitting} onClick={() => void beginFunding()} type="button">{isSubmitting ? "Connecting to Paystack..." : "Continue to Paystack"}</button>

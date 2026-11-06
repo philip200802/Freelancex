@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProjectSubmissions from "@/components/projects/ProjectSubmissions";
+import ProjectDispute from "@/components/projects/ProjectDispute";
 
 type Task = {
     id: string;
@@ -12,6 +13,7 @@ type Task = {
     amount: number;
     category: string;
     status: string;
+    funding?: { status: "funded"; amount: number; currency: string; verifiedAt?: string } | null;
     employer?: { name?: string } | null;
     freelancer?: { name?: string } | null;
 };
@@ -51,6 +53,9 @@ export default function ClientProjectPage() {
     const [paymentNotice, setPaymentNotice] = useState("");
     const [hasSubmissionHistory, setHasSubmissionHistory] = useState(false);
     const [submissionHistoryLoaded, setSubmissionHistoryLoaded] = useState(false);
+    const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+    const [toast, setToast] = useState("");
+    const [toastIsError, setToastIsError] = useState(false);
 
     useEffect(() => {
         const paymentState = new URLSearchParams(window.location.search).get("payment");
@@ -78,12 +83,23 @@ export default function ClientProjectPage() {
         return () => controller.abort();
     }, [loadAttempt, params.projectId]);
 
+    useEffect(() => {
+        if (!toast) return;
+        const timeout = window.setTimeout(() => setToast(""), 5000);
+        return () => window.clearTimeout(timeout);
+    }, [toast]);
+
+    useEffect(() => {
+        if (!isCancelDialogOpen || isSubmitting) return;
+        function closeOnEscape(event: KeyboardEvent) {
+            if (event.key === "Escape") setIsCancelDialogOpen(false);
+        }
+        document.addEventListener("keydown", closeOnEscape);
+        return () => document.removeEventListener("keydown", closeOnEscape);
+    }, [isCancelDialogOpen, isSubmitting]);
+
     async function performAction(action: "complete" | "cancel") {
-        if (!task) return;
-        const confirmation = action === "complete"
-            ? "Complete this legacy submission? This does not release or transfer payment."
-            : "Cancel this unassigned posting? Pending applications must be reviewed first.";
-        if (!window.confirm(confirmation)) return;
+        if (!task || isSubmitting) return;
         setIsSubmitting(true);
         setError("");
         setSuccess("");
@@ -100,9 +116,19 @@ export default function ClientProjectPage() {
                 setTask((current) => current ? { ...current, status: result.task!.status } : current);
                 setIsReviewReady(result.task.status === "completed");
             }
+            if (action === "cancel") {
+                setIsCancelDialogOpen(false);
+                setToastIsError(false);
+                setToast(result.message || "Job posting cancelled.");
+            }
             router.refresh();
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : "The project action could not be completed.");
+            const message = requestError instanceof Error ? requestError.message : "The project action could not be completed.";
+            setError(message);
+            if (action === "cancel") {
+                setToastIsError(true);
+                setToast(message);
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -163,6 +189,7 @@ export default function ClientProjectPage() {
                     <div className="dashboard-list">
                         <div className="dashboard-list-row"><div><strong>Client</strong><span>{task.employer?.name || "Project owner"}</span></div></div>
                         <div className="dashboard-list-row"><div><strong>Freelancer</strong><span>{task.freelancer?.name || "Awaiting assignment"}</span></div></div>
+                        {task.funding && <div className="dashboard-list-row"><div><strong>Funding</strong><span>Confirmed · {money.format(task.funding.amount)}{task.funding.verifiedAt ? ` · ${new Date(task.funding.verifiedAt).toLocaleDateString()}` : ""}</span></div></div>}
                     </div>
                 </article>
                 <aside className="detail-aside">
@@ -172,7 +199,7 @@ export default function ClientProjectPage() {
                     {error && <p className="form-error" role="alert">{error}</p>}
                     {task.status === "awaiting_funding" && <Link className="button button-primary" href={`/client/dashboard/projects/${task.id}/fund`}>Fund project with Paystack</Link>}
                     {(task.status === "open" || task.status === "pending_approval") && <p className="muted-copy">Accept a freelancer application before funding this project.</p>}
-                    {(task.status === "open" || task.status === "pending_approval") && !task.freelancer && <button className="button button-quiet" disabled={isSubmitting} onClick={() => void performAction("cancel")} type="button">Cancel posting</button>}
+                    {(task.status === "open" || task.status === "pending_approval") && !task.freelancer && <button className="button button-quiet" disabled={isSubmitting} onClick={() => { setError(""); setIsCancelDialogOpen(true); }} type="button">Cancel posting</button>}
                     {task.status === "submitted" && submissionHistoryLoaded && !hasSubmissionHistory && <button className="button button-primary" disabled={isSubmitting} onClick={() => void performAction("complete")} type="button">Complete Legacy Submission</button>}
                     {task.status === "submitted" && !submissionHistoryLoaded && <p className="muted-copy" role="status">Loading submission history...</p>}
                     <Link className="button button-quiet" href="/client/dashboard/payments">Payment history</Link>
@@ -180,6 +207,7 @@ export default function ClientProjectPage() {
             </div>
 
             <ProjectSubmissions projectId={task.id} role="employer" projectStatus={task.status} onStatusChange={updateTaskStatus} onHistoryLoaded={handleSubmissionHistory} />
+            {task.freelancer && <ProjectDispute projectId={task.id} projectStatus={task.status} role="employer" />}
 
             {isReviewReady && <section className="dashboard-panel">
                 <div className="dashboard-panel-heading"><div><span className="panel-kicker">Review</span><h2>Leave a review</h2></div></div>
@@ -199,5 +227,21 @@ export default function ClientProjectPage() {
                 {reviews.length ? <div className="dashboard-list">{reviews.map((review) => <article className="dashboard-list-row" key={review.id}><div><strong>{review.client?.name || "Client"}</strong><span>{"★".repeat(review.rating)}{review.rating ? "" : ""}</span><p>{review.comment}</p></div><time>{new Date(review.createdAt).toLocaleDateString()}</time></article>)}</div> : <div className="dashboard-empty"><strong>No reviews yet.</strong><p>Project reviews will appear here once a client leaves feedback.</p></div>}
             </section>
         </section>
+        {isCancelDialogOpen && <div className="admin-users-overlay" onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isSubmitting) setIsCancelDialogOpen(false);
+        }}>
+            <section aria-labelledby="cancel-job-title" aria-modal="true" className="admin-users-dialog admin-users-confirm-dialog" role="alertdialog">
+                <h2 id="cancel-job-title">Cancel Job Posting?</h2>
+                <p>Are you sure you want to cancel this job posting? Freelancers will no longer be able to apply.</p>
+                {error && <p className="form-error" role="alert">{error}</p>}
+                <div className="admin-users-dialog-actions">
+                    <button className="button button-quiet" disabled={isSubmitting} onClick={() => setIsCancelDialogOpen(false)} type="button">Keep Job</button>
+                    <button className="button button-primary" disabled={isSubmitting} onClick={() => void performAction("cancel")} type="button">
+                        {isSubmitting ? "Cancelling..." : "Cancel Job"}
+                    </button>
+                </div>
+            </section>
+        </div>}
+        {toast && <div className={`admin-users-toast${toastIsError ? " client-job-toast-error" : ""}`} role={toastIsError ? "alert" : "status"}>{toast}</div>}
     </main>;
 }

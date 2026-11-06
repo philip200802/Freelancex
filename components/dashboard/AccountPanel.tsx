@@ -15,6 +15,8 @@ type AccountUser = {
     city: string;
     isVerified: boolean;
     isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
 };
 type AccountProfile = { user: AccountUser; profile: Record<string, unknown> | null };
 type Preferences = { emailNotifications: boolean; inAppNotifications: boolean; profileVisibility: "public" | "private" };
@@ -27,6 +29,15 @@ type PayoutBankDetails = {
     verifiedAt: string | null;
     verified: boolean;
 };
+
+function deduplicateBanksByCode(banks: PaystackBankOption[]) {
+    const uniqueBanks = new Map<string, PaystackBankOption>();
+    for (const bank of banks) {
+        if (typeof bank.code !== "string" || !bank.code.trim() || typeof bank.name !== "string" || !bank.name.trim()) continue;
+        if (!uniqueBanks.has(bank.code)) uniqueBanks.set(bank.code, bank);
+    }
+    return [...uniqueBanks.values()];
+}
 
 const freelancerProfileFields = [
     "professionalTitle",
@@ -47,9 +58,51 @@ function profileText(profile: Record<string, unknown>, key: string) {
     return typeof value === "string" ? value : "";
 }
 
+function formatAccountDate(value: string) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Unavailable" : new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(date);
+}
+
+function safeWebsite(value: string) {
+    try {
+        const url = new URL(value);
+        return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+    } catch {
+        return "";
+    }
+}
+
+async function fetchGetWithRetry(url: string, signal: AbortSignal) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const response = await fetch(url, { cache: "no-store", signal });
+            if (response.status < 500 || attempt === 2) return response;
+        } catch (error) {
+            if (signal.aborted || attempt === 2) throw error;
+        }
+        await new Promise<void>((resolve, reject) => {
+            let timeout = 0;
+            const onAbort = () => {
+                window.clearTimeout(timeout);
+                signal.removeEventListener("abort", onAbort);
+                reject(new DOMException("The request was aborted.", "AbortError"));
+            };
+            timeout = window.setTimeout(() => {
+                signal.removeEventListener("abort", onAbort);
+                resolve();
+            }, 300 * (attempt + 1));
+            signal.addEventListener("abort", onAbort, { once: true });
+        });
+    }
+    throw new Error("Account data is unavailable.");
+}
+
 export default function AccountPanel({ section, role }: { section: "profile" | "settings"; role: "freelancer" | "employer" | "admin" }) {
     const router = useRouter();
     const [profile, setProfile] = useState<AccountProfile | null>(null);
+    const [savedProfile, setSavedProfile] = useState<AccountProfile | null>(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [preferences, setPreferences] = useState<Preferences>({ emailNotifications: true, inAppNotifications: true, profileVisibility: "public" });
     const [state, setState] = useState<"loading" | "ready" | "error">("loading");
     const [error, setError] = useState("");
@@ -80,18 +133,22 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
     const [bankRetryAt, setBankRetryAt] = useState<number | null>(null);
     const [bankRetrySeconds, setBankRetrySeconds] = useState(0);
     const bankVerificationInFlight = useRef(false);
+    const profileSaveInFlight = useRef(false);
 
     useEffect(() => {
         const controller = new AbortController();
         async function load() {
             try {
                 if (section === "profile") {
-                    const response = await fetch("/api/account/profile", { cache: "no-store", signal: controller.signal });
+                    const response = await fetchGetWithRetry("/api/account/profile", controller.signal);
                     const result = await response.json() as AccountProfile & { error?: string };
                     if (!response.ok) throw new Error(result.error || "Profile is unavailable.");
-                    if (!controller.signal.aborted) setProfile(result);
+                    if (!controller.signal.aborted) {
+                        setProfile(result);
+                        setSavedProfile(result);
+                    }
                 } else {
-                    const response = await fetch("/api/account/preferences", { cache: "no-store", signal: controller.signal });
+                    const response = await fetchGetWithRetry("/api/account/preferences", controller.signal);
                     const result = await response.json() as { preferences?: Preferences; error?: string };
                     if (!response.ok) throw new Error(result.error || "Settings are unavailable.");
                     if (!controller.signal.aborted && result.preferences) setPreferences(result.preferences);
@@ -105,7 +162,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
         }
         void load();
         return () => controller.abort();
-    }, [section]);
+    }, [loadAttempt, section]);
 
     useEffect(() => {
         if (section !== "settings" || role !== "freelancer") return;
@@ -123,9 +180,13 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
                 if (!banksResponse.ok || !Array.isArray(banksResult.banks)) throw new Error(banksResult.error || "Bank list is unavailable.");
                 if (!detailsResponse.ok) throw new Error(detailsResult.error || "Saved bank details are unavailable.");
                 if (controller.signal.aborted) return;
-                setBanks(banksResult.banks);
+                const uniqueBanks = deduplicateBanksByCode(banksResult.banks);
+                setBanks(uniqueBanks);
                 setPayoutBank(detailsResult.bankDetails || null);
-                setBankCode(detailsResult.bankDetails?.bankCode || banksResult.banks[0]?.code || "");
+                const savedBankCode = detailsResult.bankDetails?.bankCode;
+                setBankCode(uniqueBanks.some((bank) => bank.code === savedBankCode)
+                    ? savedBankCode || ""
+                    : uniqueBanks[0]?.code || "");
                 setBankState("ready");
             } catch (loadError) {
                 if (controller.signal.aborted) return;
@@ -153,7 +214,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
         return () => window.clearInterval(interval);
     }, [bankRetryAt]);
 
-    function updateUser(field: "firstName" | "lastName" | "city" | "country", value: string) {
+    function updateUser(field: "firstName" | "lastName" | "email" | "city" | "country", value: string) {
         setProfile((current) => current ? { ...current, user: { ...current.user, [field]: value } } : current);
     }
 
@@ -169,11 +230,15 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
         if (!file) return;
         if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
             setError("Profile image must be JPG, JPEG, PNG, or WEBP.");
+            setSelectedImage(null);
+            setImagePreview("");
             event.target.value = "";
             return;
         }
         if (file.size === 0 || file.size > 5 * 1024 * 1024) {
             setError("Choose a profile image that is larger than 0 bytes and no more than 5 MB.");
+            setSelectedImage(null);
+            setImagePreview("");
             event.target.value = "";
             return;
         }
@@ -206,31 +271,41 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
 
     async function save(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        if (profileSaveInFlight.current) return;
+        profileSaveInFlight.current = true;
         setError("");
         setSuccess("");
         setIsSaving(true);
         const isFreelancerProfile = section === "profile" && profile?.user.role === "freelancer";
+        const isEmployerProfile = section === "profile" && profile?.user.role === "employer";
         const endpoint = section === "profile" ? "/api/account/profile" : "/api/account/preferences";
         const method = section === "profile" ? "PATCH" : "PUT";
         try {
             let response: Response;
-            if (isFreelancerProfile && profile) {
+            if ((isFreelancerProfile || isEmployerProfile) && profile) {
                 const userData = {
                     firstName: profile.user.firstName,
                     lastName: profile.user.lastName,
+                    email: profile.user.email,
                     city: profile.user.city,
                     country: profile.user.country,
                 };
                 const currentProfile = profile.profile || {};
                 const profileData: Record<string, unknown> = {};
-                for (const field of freelancerProfileFields) {
-                    if (field === "skills") {
-                        profileData.skills = Array.isArray(currentProfile.skills) ? currentProfile.skills : [];
-                    } else if (field === "hourlyRate") {
-                        const rate = currentProfile.hourlyRate;
-                        if (typeof rate === "number") profileData.hourlyRate = rate;
-                        else if (typeof rate === "string") profileData.hourlyRate = rate.trim() ? Number(rate) : null;
-                    } else {
+                if (isFreelancerProfile) {
+                    for (const field of freelancerProfileFields) {
+                        if (field === "skills") {
+                            profileData.skills = Array.isArray(currentProfile.skills) ? currentProfile.skills : [];
+                        } else if (field === "hourlyRate") {
+                            const rate = currentProfile.hourlyRate;
+                            if (typeof rate === "number") profileData.hourlyRate = rate;
+                            else if (typeof rate === "string") profileData.hourlyRate = rate.trim() ? Number(rate) : null;
+                        } else {
+                            profileData[field] = typeof currentProfile[field] === "string" ? currentProfile[field] : "";
+                        }
+                    }
+                } else {
+                    for (const field of ["accountType", "companyName", "industry", "companyWebsite", "companySize", "position", "hiringFrequency", "hiringPurpose"] as const) {
                         profileData[field] = typeof currentProfile[field] === "string" ? currentProfile[field] : "";
                     }
                 }
@@ -248,20 +323,29 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
                 } : preferences;
                 response = await fetch(endpoint, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
             }
-            const result = await response.json() as { error?: string; user?: Partial<AccountUser>; profile?: Record<string, unknown> | null };
+            const result = await response.json() as { error?: string; emailVerificationRequired?: boolean; emailVerificationSent?: boolean; user?: Partial<AccountUser>; profile?: Record<string, unknown> | null };
             if (!response.ok) throw new Error(result.error || "Changes could not be saved.");
             if (section === "profile" && result.user && profile) {
-                setProfile({ ...profile, user: { ...profile.user, ...result.user }, ...(result.profile ? { profile: result.profile } : {}) });
+                const updatedProfile = { ...profile, user: { ...profile.user, ...result.user }, ...(result.profile ? { profile: result.profile } : {}) };
+                setProfile(updatedProfile);
+                setSavedProfile(updatedProfile);
             }
-            if (isFreelancerProfile && selectedImage) {
+            if ((isFreelancerProfile || isEmployerProfile) && selectedImage) {
                 window.dispatchEvent(new Event(dashboardProfileImageUpdatedEvent));
             }
+            if (section === "profile") router.refresh();
             setSelectedImage(null);
             setImagePreview("");
-            setSuccess(section === "profile" ? "Profile saved." : "Settings saved.");
+            setIsEditing(false);
+            setSuccess(result.emailVerificationRequired
+                ? result.emailVerificationSent
+                    ? "Profile saved. Verify your new email address using the link sent to your inbox."
+                    : "Profile saved, but the verification email could not be sent. Use Resend verification email to try again."
+                : section === "profile" ? "Profile saved." : "Settings saved.");
         } catch (saveError) {
             setError(saveError instanceof Error ? saveError.message : "Changes could not be saved.");
         } finally {
+            profileSaveInFlight.current = false;
             setIsSaving(false);
         }
     }
@@ -281,10 +365,21 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
             });
             const result = await response.json() as { error?: string; message?: string; retryAt?: string; bankDetails?: PayoutBankDetails };
             if (response.status === 429) {
-                const retryAt = result.retryAt ? Date.parse(result.retryAt) : Number.NaN;
-                const fallbackRetryAt = Date.now() + 30_000;
-                setBankRetryAt(Number.isFinite(retryAt) && retryAt > Date.now() ? retryAt : fallbackRetryAt);
-                throw new Error(result.error || "Paystack is rate limiting verification. Please wait before trying again.");
+                const retryAfter = response.headers.get("Retry-After");
+                const retryAfterSeconds = retryAfter ? Number(retryAfter) : Number.NaN;
+                const retryAtFromHeader = retryAfter && Number.isFinite(retryAfterSeconds)
+                    ? Date.now() + retryAfterSeconds * 1000
+                    : retryAfter
+                        ? Date.parse(retryAfter)
+                        : Number.NaN;
+                const retryAtFromResponse = result.retryAt ? Date.parse(result.retryAt) : Number.NaN;
+                const retryAt = Number.isFinite(retryAtFromHeader) && retryAtFromHeader > Date.now()
+                    ? retryAtFromHeader
+                    : Number.isFinite(retryAtFromResponse) && retryAtFromResponse > Date.now()
+                        ? retryAtFromResponse
+                        : null;
+                setBankRetryAt(retryAt);
+                throw new Error(result.error || "Paystack is temporarily limiting bank verification. Please wait before trying again.");
             }
             if (!response.ok || !result.bankDetails) throw new Error(result.error || "Bank details could not be verified and saved.");
             setPayoutBank(result.bankDetails);
@@ -347,7 +442,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
     }
 
     if (state === "loading") return <div className="dashboard-empty" role="status">Loading {section}...</div>;
-    if (state === "error") return <div className="dashboard-empty" role="alert">{error}</div>;
+    if (state === "error") return <div className="dashboard-empty" role="alert">{error}<button className="button button-quiet" onClick={() => { setError(""); setState("loading"); setLoadAttempt((attempt) => attempt + 1); }} type="button">Retry</button></div>;
 
     if (section === "profile" && profile) {
         if (profile.user.role === "freelancer") {
@@ -426,21 +521,117 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
             </form>;
         }
 
-        return <form className="dashboard-form" onSubmit={(event) => void save(event)}>
-            <h2>Account profile</h2>
-            <div className="dashboard-form-row">
-                <label>First name<input className="filter-input" required value={profile.user.firstName} onChange={(event) => updateUser("firstName", event.target.value)} /></label>
-                <label>Last name<input className="filter-input" required value={profile.user.lastName} onChange={(event) => updateUser("lastName", event.target.value)} /></label>
+        const clientProfile = profile.profile || {};
+        const avatar = imagePreview || profileText(clientProfile, "profileImage");
+        const companyWebsite = safeWebsite(profileText(clientProfile, "companyWebsite"));
+        const hiringCategories = Array.isArray(clientProfile.hiringCategories) ? clientProfile.hiringCategories.join(", ") : "";
+        const companySize = profileText(clientProfile, "companySize");
+        if (!isEditing) {
+            return <div className="client-profile-page">
+                <div className="dashboard-toolbar">
+                    <div><h2>Account Profile</h2><p className="form-hint">Your account and professional information.</p></div>
+                    <button className="button button-primary" onClick={() => { setError(""); setSuccess(""); setIsEditing(true); }} type="button">Edit Profile</button>
+                </div>
+                {!profile.user.isVerified && <div className="profile-verification-notice">
+                    <span>Your email address is not verified. Verify it to keep your account secure.</span>
+                    <button className="button button-quiet" disabled={isResendingVerification} onClick={() => void resendVerification()} type="button">
+                        {isResendingVerification ? "Sending..." : "Resend verification email"}
+                    </button>
+                </div>}
+                {error && <p className="form-error" role="alert">{error}</p>}
+                {success && <p className="success-message" role="status">{success}</p>}
+                <div className="client-profile-grid">
+                    <section className="dashboard-panel">
+                        <h3>Account Profile</h3>
+                        <div className="client-profile-identity">
+                            {avatar
+                                ? <Image className="profile-image-preview" src={avatar} alt={`${profile.user.name} profile`} width={82} height={82} unoptimized />
+                                : <div className="profile-image-placeholder" aria-hidden="true">{profile.user.firstName.charAt(0).toUpperCase()}</div>}
+                            <strong>{profile.user.name}</strong>
+                        </div>
+                        <dl className="client-profile-details">
+                            <div><dt>First name</dt><dd>{profile.user.firstName || "Not provided"}</dd></div>
+                            <div><dt>Last name</dt><dd>{profile.user.lastName || "Not provided"}</dd></div>
+                            <div><dt>Email</dt><dd>{profile.user.email || "Not provided"}</dd></div>
+                            <div><dt>City</dt><dd>{profile.user.city || "Not provided"}</dd></div>
+                            <div><dt>Country</dt><dd>{profile.user.country || "Not provided"}</dd></div>
+                            <div><dt>Account created</dt><dd>{formatAccountDate(profile.user.createdAt)}</dd></div>
+                            <div><dt>Last updated</dt><dd>{formatAccountDate(profile.user.updatedAt)}</dd></div>
+                        </dl>
+                    </section>
+                    <section className="dashboard-panel">
+                        <h3>Professional Profile Information</h3>
+                        <dl className="client-profile-details">
+                            <div><dt>Account type</dt><dd>{profileText(clientProfile, "accountType") || "Not provided"}</dd></div>
+                            <div><dt>Company name</dt><dd>{profileText(clientProfile, "companyName") || "Not provided"}</dd></div>
+                            <div><dt>Industry</dt><dd>{profileText(clientProfile, "industry") || "Not provided"}</dd></div>
+                            <div><dt>Company website</dt><dd>{companyWebsite ? <a href={companyWebsite} rel="noreferrer" target="_blank">{profileText(clientProfile, "companyWebsite")}</a> : "Not provided"}</dd></div>
+                            <div><dt>Company size</dt><dd>{companySize ? `${companySize} employees` : "Not provided"}</dd></div>
+                            <div><dt>Position</dt><dd>{profileText(clientProfile, "position") || "Not provided"}</dd></div>
+                            <div><dt>Hiring frequency</dt><dd>{profileText(clientProfile, "hiringFrequency") || "Not provided"}</dd></div>
+                            <div><dt>Hiring categories</dt><dd>{hiringCategories || "Not provided"}</dd></div>
+                            <div className="client-profile-purpose"><dt>Hiring purpose</dt><dd>{profileText(clientProfile, "hiringPurpose") || "Not provided"}</dd></div>
+                        </dl>
+                    </section>
+                </div>
+            </div>;
+        }
+
+        return <form className="dashboard-form client-profile-form" onSubmit={(event) => void save(event)}>
+            <div className="dashboard-form-heading">
+                <div><h2>Edit Profile</h2><p className="form-hint">Update your account and professional information.</p></div>
             </div>
-            <label>Email<input className="filter-input" disabled value={profile.user.email} /></label>
-            <div className="dashboard-form-row">
-                <label>City<input className="filter-input" required value={profile.user.city} onChange={(event) => updateUser("city", event.target.value)} /></label>
-                <label>Country<input className="filter-input" required value={profile.user.country} onChange={(event) => updateUser("country", event.target.value)} /></label>
+            <div className="profile-image-field">
+                <span className="filter-label">Profile image</span>
+                <div className="profile-image-row">
+                    {avatar
+                        ? <Image className="profile-image-preview" src={avatar} alt="Profile preview" width={82} height={82} unoptimized />
+                        : <div className="profile-image-placeholder" aria-hidden="true">{profile.user.firstName.charAt(0).toUpperCase()}</div>}
+                    <label className="profile-image-upload">Choose an image<input accept="image/jpeg,image/png,image/webp" className="filter-input" onChange={handleImageChange} type="file" /><span className="form-hint">JPG, PNG, or WEBP; up to 5 MB.</span></label>
+                </div>
             </div>
-            {profile.profile && <section className="dashboard-panel"><h3>Professional profile information</h3><dl>{Object.entries(profile.profile).filter(([key, value]) => key !== "_id" && key !== "user" && key !== "__v" && value !== undefined && value !== null && typeof value !== "object").map(([key, value]) => <div key={key}><dt>{key.replace(/([A-Z])/g, " $1")}</dt><dd>{String(value)}</dd></div>)}</dl></section>}
+            <section className="dashboard-panel">
+                <h3>Account Profile</h3>
+                <div className="dashboard-form-row">
+                    <label>First name<input autoComplete="given-name" className="filter-input" maxLength={120} required value={profile.user.firstName} onChange={(event) => updateUser("firstName", event.target.value)} /></label>
+                    <label>Last name<input autoComplete="family-name" className="filter-input" maxLength={120} required value={profile.user.lastName} onChange={(event) => updateUser("lastName", event.target.value)} /></label>
+                </div>
+                <label>Email<input autoComplete="email" className="filter-input" maxLength={254} required type="email" value={profile.user.email} onChange={(event) => updateUser("email", event.target.value)} /><span className="form-hint">Changing your email requires verification at the new address.</span></label>
+                <div className="dashboard-form-row">
+                    <label>City<input autoComplete="address-level2" className="filter-input" maxLength={120} required value={profile.user.city} onChange={(event) => updateUser("city", event.target.value)} /></label>
+                    <label>Country<input autoComplete="country-name" className="filter-input" maxLength={120} required value={profile.user.country} onChange={(event) => updateUser("country", event.target.value)} /></label>
+                </div>
+            </section>
+            <section className="dashboard-panel client-company-fields">
+                <h3>Professional Profile Information</h3>
+                <label>Account type<select className="filter-input" required value={profileText(clientProfile, "accountType")} onChange={(event) => updateProfessionalProfile("accountType", event.target.value)}><option value="">Select account type</option><option>Individual</option><option>Company</option></select></label>
+                <div className="dashboard-form-row">
+                    <label>Company name<input className="filter-input" maxLength={500} value={profileText(clientProfile, "companyName")} onChange={(event) => updateProfessionalProfile("companyName", event.target.value)} /></label>
+                    <label>Industry<input className="filter-input" maxLength={500} value={profileText(clientProfile, "industry")} onChange={(event) => updateProfessionalProfile("industry", event.target.value)} /></label>
+                </div>
+                <div className="dashboard-form-row">
+                    <label>Company website<input className="filter-input" maxLength={500} placeholder="https://" type="url" value={profileText(clientProfile, "companyWebsite")} onChange={(event) => updateProfessionalProfile("companyWebsite", event.target.value)} /></label>
+                    <label>Company size<input className="filter-input" max={1_000_000_000} min={1} step={1} type="number" value={companySize} onChange={(event) => updateProfessionalProfile("companySize", event.target.value)} /></label>
+                </div>
+                <div className="dashboard-form-row">
+                    <label>Position<input className="filter-input" maxLength={500} value={profileText(clientProfile, "position")} onChange={(event) => updateProfessionalProfile("position", event.target.value)} /></label>
+                    <label>Hiring frequency<select className="filter-input" required value={profileText(clientProfile, "hiringFrequency")} onChange={(event) => updateProfessionalProfile("hiringFrequency", event.target.value)}><option value="">Select hiring frequency</option><option>Occasionally</option><option>Monthly</option><option>Frequently</option><option>For ongoing projects</option></select></label>
+                </div>
+                <label>Hiring purpose<textarea className="filter-input dashboard-textarea" maxLength={5000} value={profileText(clientProfile, "hiringPurpose")} onChange={(event) => updateProfessionalProfile("hiringPurpose", event.target.value)} /></label>
+            </section>
             {error && <p className="form-error" role="alert">{error}</p>}
             {success && <p className="success-message" role="status">{success}</p>}
-            <button className="button button-primary" disabled={isSaving} type="submit">{isSaving ? "Saving..." : "Save Profile"}</button>
+            <div className="client-profile-actions">
+                <button className="button button-primary" disabled={isSaving} type="submit">{isSaving ? "Saving..." : "Save Changes"}</button>
+                <button className="button button-quiet" disabled={isSaving} onClick={() => {
+                    if (savedProfile) setProfile(savedProfile);
+                    setSelectedImage(null);
+                    setImagePreview("");
+                    setError("");
+                    setSuccess("");
+                    setIsEditing(false);
+                }} type="button">Cancel</button>
+            </div>
         </form>;
     }
 
@@ -488,7 +679,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
                     <label>10-digit account number<input autoComplete="off" className="filter-input" inputMode="numeric" maxLength={10} minLength={10} pattern="[0-9]{10}" required type="text" value={accountNumber} onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, "").slice(0, 10))} /></label>
                     {bankError && <p className="form-error" role="alert">{bankError}</p>}
                     {bankSuccess && <p className="success-message" role="status">{bankSuccess}</p>}
-                    <button className="button button-primary" disabled={isSavingBank || Boolean(bankRetryAt) || !bankCode || accountNumber.length !== 10} type="submit">{isSavingBank ? "Verifying..." : bankRetryAt ? `Retry in ${bankRetrySeconds}s` : payoutBank ? "Verify and update bank details" : "Verify and save bank details"}</button>
+                    <button aria-busy={isSavingBank} className="button button-primary" disabled={isSavingBank || Boolean(bankRetryAt) || !bankCode || accountNumber.length !== 10} type="submit">{isSavingBank ? "Verifying..." : bankRetryAt ? `Retry in ${bankRetrySeconds}s` : payoutBank ? "Verify and update bank details" : "Verify and save bank details"}</button>
                 </form>
             </>}
         </section>}

@@ -22,9 +22,14 @@ export type PaystackBank = {
 };
 
 export class PaystackConfigurationError extends Error {
-    constructor() {
-        super("Paystack is not configured.");
+    readonly reason: "missing_secret" | "test_secret_required";
+
+    constructor(reason: "missing_secret" | "test_secret_required") {
+        super(reason === "missing_secret"
+            ? "PAYSTACK_SECRET_KEY is not configured."
+            : "PAYSTACK_SECRET_KEY must use a Paystack test key.");
         this.name = "PaystackConfigurationError";
+        this.reason = reason;
     }
 }
 
@@ -33,6 +38,7 @@ export class PaystackRequestError extends Error {
     readonly statusCode?: number;
     readonly operation?: string;
     readonly providerMessage?: string;
+    readonly retryAfter?: string;
     readonly rateLimitReset?: string;
     readonly verificationFailure: boolean;
 
@@ -43,6 +49,7 @@ export class PaystackRequestError extends Error {
         details: {
             operation?: string;
             providerMessage?: string;
+            retryAfter?: string;
             rateLimitReset?: string;
             verificationFailure?: boolean;
         } = {},
@@ -53,6 +60,7 @@ export class PaystackRequestError extends Error {
         this.statusCode = statusCode;
         this.operation = details.operation;
         this.providerMessage = details.providerMessage;
+        this.retryAfter = details.retryAfter;
         this.rateLimitReset = details.rateLimitReset;
         this.verificationFailure = details.verificationFailure ?? false;
     }
@@ -63,8 +71,13 @@ let banksRequest: Promise<PaystackBank[]> | undefined;
 
 function getSecret() {
     const secret = process.env.PAYSTACK_SECRET_KEY;
-    if (!secret) throw new PaystackConfigurationError();
+    if (!secret) throw new PaystackConfigurationError("missing_secret");
+    if (!secret.startsWith("sk_test_")) throw new PaystackConfigurationError("test_secret_required");
     return secret;
+}
+
+export function assertPaystackTestModeConfigured() {
+    getSecret();
 }
 
 async function paystackRequest<T>(path: string, init?: RequestInit): Promise<PaystackEnvelope<T>> {
@@ -93,6 +106,7 @@ async function paystackRequest<T>(path: string, init?: RequestInit): Promise<Pay
         const definitive = [400, 401, 403, 404, 422, 429].includes(response.status);
         throw new PaystackRequestError("Paystack returned an unreadable response.", definitive, response.status, {
             operation,
+            retryAfter: response.headers.get("retry-after") || undefined,
             rateLimitReset: response.headers.get("x-ratelimit-reset") || undefined,
         });
     }
@@ -102,6 +116,7 @@ async function paystackRequest<T>(path: string, init?: RequestInit): Promise<Pay
         throw new PaystackRequestError("Paystack rejected the request.", definitive, response.status, {
             operation,
             providerMessage: typeof result.message === "string" ? result.message.slice(0, 300) : undefined,
+            retryAfter: response.headers.get("retry-after") || undefined,
             rateLimitReset: response.headers.get("x-ratelimit-reset") || undefined,
             verificationFailure,
         });

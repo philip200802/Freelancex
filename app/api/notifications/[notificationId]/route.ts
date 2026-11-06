@@ -24,7 +24,7 @@ export async function PATCH(_request: Request, context: { params: Promise<{ noti
     try {
         await connectToDatabase();
         const notification = await Notification.findOneAndUpdate(
-            { _id: notificationId, recipient: user.userId },
+            { _id: notificationId, recipient: user.userId, $or: [{ recipientRole: user.role }, { recipientRole: { $exists: false } }] },
             { readAt: new Date() },
             { returnDocument: "after" },
         ).select("_id readAt");

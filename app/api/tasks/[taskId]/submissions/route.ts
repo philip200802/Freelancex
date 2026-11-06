@@ -7,6 +7,8 @@ import Notification from "@/models/Notification";
 import ProjectSubmission from "@/models/ProjectSubmission";
 import Task from "@/models/Task";
 import UserPreference from "@/models/UserPreference";
+import User from "@/models/User";
+import { sendWorkflowEmailSafely, sendWorkflowEmailToAdminsSafely } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
 
@@ -101,7 +103,7 @@ export async function GET(_request: Request, context: { params: Promise<{ taskId
         if (!task) return jsonNoStore({ error: "Project not found." }, { status: 404 });
         const isFreelancer = user.role === "freelancer" && task.freelancer?.toString() === user.userId;
         const isEmployer = user.role === "employer" && task.employer?.toString() === user.userId;
-        if (!isFreelancer && !isEmployer) return jsonNoStore({ error: "Project not found." }, { status: 404 });
+        if (!isFreelancer && !isEmployer && user.role !== "admin") return jsonNoStore({ error: "Project not found." }, { status: 404 });
 
         const submissions = await ProjectSubmission.find({ task: taskId })
             .sort({ submissionNumber: 1 })
@@ -218,18 +220,73 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
                     transactionOperation = "Notification.create";
                     await Notification.create([{
                         recipient: task.employer,
+                        recipientRole: "employer",
                         actor: user.userId,
                         type: "submission",
                         title: "Work submitted for review",
                         body: `A freelancer submitted work for "${task.title}".`,
                         relatedTask: taskId,
                         relatedSubmission: submission._id,
+                        eventKey: `submission:${submission._id}:submitted:client`,
                         href: `/client/dashboard/projects/${taskId}`,
                     }], { session });
+                }
+                const admins = await User.find({ role: "admin" }).select("_id").session(session).lean();
+                if (admins.length) {
+                    await Notification.create(admins.map((admin) => ({
+                        recipient: admin._id,
+                        recipientRole: "admin" as const,
+                        actor: user.userId,
+                        type: "admin_submission" as const,
+                        title: "Project submitted for review",
+                        body: `A freelancer submitted work for "${task.title}".`,
+                        relatedTask: taskId,
+                        relatedSubmission: submission._id,
+                        eventKey: `submission:${submission._id}:submitted:admin`,
+                        href: `/admin/dashboard/jobs/${taskId}`,
+                    })), { session });
                 }
             });
         } finally {
             await session.endSession();
+        }
+
+        try {
+            const [client, freelancer] = await Promise.all([
+                User.findById(task.employer).select("name email isVerified").lean(),
+                User.findById(user.userId).select("name email isVerified").lean(),
+            ]);
+            const details = [
+                { label: "Project", value: task.title },
+                { label: "Project reference", value: taskId },
+                { label: "Submitted", value: submittedAt.toLocaleString("en-GB", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC" },
+            ];
+            await Promise.all([
+                sendWorkflowEmailSafely("project_submitted_client", client, {
+                    subject: "Completed work is ready for your review on FreelanceX.",
+                    heading: "Work submitted for your review",
+                    message: "Your freelancer submitted project work. Sign in to inspect the deliverables and approve the submission or request a revision.",
+                    details: [{ label: "Project", value: task.title }],
+                    actionPath: `/client/dashboard/projects/${taskId}`,
+                    actionLabel: "Review deliverables",
+                }),
+                sendWorkflowEmailToAdminsSafely("project_submitted_admin", {
+                    subject: "FreelanceX — Project Submitted for Admin Review.",
+                    heading: "Project work submitted",
+                    message: "A freelancer submitted completed work. Review the project record and submission.",
+                    details: [
+                        { label: "Freelancer", value: freelancer?.name || "Freelancer" },
+                        { label: "Client", value: client?.name || "Client" },
+                        ...details,
+                    ],
+                    actionPath: `/admin/dashboard/jobs/${taskId}`,
+                    actionLabel: "Review project",
+                }),
+            ]);
+        } catch (emailError) {
+            console.error("Project submission email notifications could not be prepared.", {
+                errorName: emailError instanceof Error ? emailError.name : "UnknownError",
+            });
         }
 
         return jsonNoStore({

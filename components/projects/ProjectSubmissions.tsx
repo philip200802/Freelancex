@@ -29,7 +29,7 @@ type SubmissionResponse = {
     task?: { status: string };
 };
 
-type SubmissionRole = "freelancer" | "employer";
+type SubmissionRole = "freelancer" | "employer" | "admin";
 
 function statusLabel(status: Submission["status"]) {
     if (status === "revision_requested") return "Revision requested";

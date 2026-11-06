@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { decryptBankAccountNumber, encryptBankAccountNumber, BankAccountEncryptionConfigurationError } from "@/lib/bank-account-crypto";
 import { getCurrentUser } from "@/lib/current-user";
 import { connectToDatabase } from "@/lib/mongodb";
@@ -22,6 +23,10 @@ function jsonNoStore(body: unknown, init?: ResponseInit) {
     return response;
 }
 
+function failure(status: number, code: string, message: string, retryable: boolean, extra: Record<string, unknown> = {}) {
+    return jsonNoStore({ success: false, code, message, error: message, retryable, ...extra }, { status });
+}
+
 function getRateLimitRetryAt(value?: string) {
     if (!value) return undefined;
     const numeric = Number(value);
@@ -39,49 +44,67 @@ function getRateLimitRetryAt(value?: string) {
 }
 
 function providerError(error: unknown) {
-    if (error instanceof PaystackConfigurationError || error instanceof BankAccountEncryptionConfigurationError) {
-        return jsonNoStore({ error: "Bank verification is not configured. Contact the platform administrator." }, { status: 500 });
+    if (error instanceof BankAccountEncryptionConfigurationError) {
+        return failure(503, "BANK_ENCRYPTION_KEY_NOT_CONFIGURED", "Bank account encryption is not configured. Set a valid 32-byte BANK_ACCOUNT_ENCRYPTION_KEY and restart the server.", false);
+    }
+    if (error instanceof PaystackConfigurationError) {
+        const code = error.reason === "missing_secret" ? "PAYSTACK_TEST_KEY_MISSING" : "PAYSTACK_TEST_KEY_REQUIRED";
+        return failure(503, code, error.reason === "missing_secret"
+            ? "Paystack test mode is not configured. Set PAYSTACK_SECRET_KEY to a test key."
+            : "Bank verification only accepts a Paystack test key. Configure an sk_test_ key.", false);
     }
     if (error instanceof PaystackRequestError) {
         if (error.statusCode === 429) {
-            const retryAt = getRateLimitRetryAt(error.rateLimitReset);
+            const retryAt = getRateLimitRetryAt(error.retryAfter) || getRateLimitRetryAt(error.rateLimitReset);
             console.warn("Paystack bank request was rate limited.", {
                 operation: error.operation,
-                rateLimitReset: error.rateLimitReset,
+                retryAfterProvided: Boolean(error.retryAfter),
+                rateLimitResetProvided: Boolean(error.rateLimitReset),
             });
             const headers = new Headers();
-            if (error.rateLimitReset) headers.set("x-ratelimit-reset", error.rateLimitReset);
+            if (error.retryAfter) headers.set("Retry-After", error.retryAfter);
+            if (error.rateLimitReset) headers.set("X-RateLimit-Reset", error.rateLimitReset);
             return jsonNoStore({
-                error: "Paystack is temporarily limiting bank verification requests. Please retry after the indicated time.",
-                retryAt,
+                success: false,
+                code: "PAYSTACK_RATE_LIMITED",
+                message: "Paystack is temporarily limiting bank verification requests. Please wait before trying again.",
+                error: "Paystack is temporarily limiting bank verification requests. Please wait before trying again.",
+                retryable: true,
+                ...(retryAt ? { retryAt } : {}),
             }, { status: 429, headers });
         }
         if (error.verificationFailure) {
-            return jsonNoStore({
-                error: error.providerMessage || "Paystack could not verify this account. Check the account number and bank code.",
-            }, { status: 422 });
+            return failure(422, "BANK_VERIFICATION_FAILED", "We could not verify this bank account. Check the account number and selected bank.", false);
         }
         console.error("Paystack bank request failed.", {
             operation: error.operation,
             statusCode: error.statusCode,
             definitive: error.definitive,
         });
-        if (error.statusCode && error.statusCode >= 500) {
-            return jsonNoStore({ error: "Paystack is temporarily unavailable. Please try again later." }, { status: 502 });
-        }
         if (error.statusCode === 401 || error.statusCode === 403) {
-            return jsonNoStore({ error: "Bank verification could not authenticate with Paystack. Contact the platform administrator." }, { status: 502 });
+            return failure(502, "PAYSTACK_AUTHENTICATION_FAILED", "Bank verification could not authenticate with Paystack. Contact the platform administrator.", false);
         }
-        return jsonNoStore({ error: "Bank verification is temporarily unavailable. Please try again later." }, { status: 503 });
+        return failure(503, "PAYSTACK_UNAVAILABLE", "Paystack is temporarily unavailable. Please try again later.", true);
     }
-    console.error("Bank details request failed.", { errorName: error instanceof Error ? error.name : "UnknownError" });
-    return jsonNoStore({ error: "Bank details are temporarily unavailable." }, { status: 503 });
+    if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+        return failure(409, "BANK_UPDATE_IN_PROGRESS", "A bank details update is already being processed. Please retry shortly.", true);
+    }
+    if (error instanceof Error && error.message === "FREELANCER_NOT_FOUND") {
+        return failure(404, "FREELANCER_NOT_FOUND", "Freelancer account not found.", false);
+    }
+
+    const diagnosticId = randomUUID();
+    console.error("Bank details operation failed.", {
+        diagnosticId,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return failure(500, "BANK_DETAILS_INTERNAL_ERROR", "Bank details could not be saved due to an unexpected error. Contact support with the diagnostic ID.", false, { diagnosticId });
 }
 
 export async function GET(request: Request) {
     const currentUser = await getCurrentUser();
-    if (!currentUser) return jsonNoStore({ error: "Authentication required." }, { status: 401 });
-    if (currentUser.role !== "freelancer") return jsonNoStore({ error: "Only freelancers can manage payout bank details." }, { status: 403 });
+    if (!currentUser) return failure(401, "AUTHENTICATION_REQUIRED", "Authentication required.", false);
+    if (currentUser.role !== "freelancer") return failure(403, "FREELANCER_REQUIRED", "Only freelancers can manage payout bank details.", false);
 
     if (new URL(request.url).searchParams.get("list") === "true") {
         try {
@@ -118,23 +141,31 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-    const currentUser = await getCurrentUser();
-    if (!currentUser) return jsonNoStore({ error: "Authentication required." }, { status: 401 });
-    if (currentUser.role !== "freelancer") return jsonNoStore({ error: "Only freelancers can manage payout bank details." }, { status: 403 });
+    let currentUser: Awaited<ReturnType<typeof getCurrentUser>>;
+    try {
+        currentUser = await getCurrentUser();
+    } catch (error) {
+        return providerError(error);
+    }
+    if (!currentUser) return failure(401, "AUTHENTICATION_REQUIRED", "Authentication required.", false);
+    if (currentUser.role !== "freelancer") return failure(403, "FREELANCER_REQUIRED", "Only freelancers can manage payout bank details.", false);
 
     let body: { accountNumber?: unknown; bankCode?: unknown };
     try {
         body = await request.json() as typeof body;
     } catch {
-        return jsonNoStore({ error: "Bank details are invalid." }, { status: 400 });
+        return failure(400, "INVALID_BANK_DETAILS", "Bank details are invalid.", false);
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return failure(400, "INVALID_BANK_DETAILS", "Bank details are invalid.", false);
     }
     const accountNumber = typeof body.accountNumber === "string" ? body.accountNumber.trim() : "";
     const bankCode = typeof body.bankCode === "string" ? body.bankCode.trim() : "";
     if (!/^\d{10}$/.test(accountNumber) || !bankCode || bankCode.length > 32) {
-        return jsonNoStore({ error: "Choose a bank and enter a valid 10-digit account number." }, { status: 400 });
+        return failure(400, "INVALID_BANK_DETAILS", "Choose a bank and enter a valid 10-digit account number.", false);
     }
     if (activeBankVerifications.has(currentUser.userId)) {
-        return jsonNoStore({ error: "Bank verification is already in progress. Please wait for it to finish." }, { status: 409 });
+        return failure(409, "BANK_VERIFICATION_IN_PROGRESS", "Bank verification is already in progress. Please wait for it to finish.", true);
     }
 
     activeBankVerifications.add(currentUser.userId);
@@ -144,7 +175,7 @@ export async function PUT(request: Request) {
         await migrateLegacyBankAccounts();
         const user = await User.findById(currentUser.userId)
             .select("+paystackRecipientCode +payoutAccountNumber email role");
-        if (!user || user.role !== "freelancer") return jsonNoStore({ error: "Freelancer account not found." }, { status: 404 });
+        if (!user || user.role !== "freelancer") return failure(404, "FREELANCER_NOT_FOUND", "Freelancer account not found.", false);
 
         const existingBankAccount = await BankAccount.findOne({ user: currentUser.userId })
             .select("+encryptedAccountNumber")
@@ -157,6 +188,7 @@ export async function PUT(request: Request) {
             decryptBankAccountNumber(existingBankAccount.encryptedAccountNumber) === accountNumber
         ) {
             return jsonNoStore({
+                success: true,
                 message: "These verified bank details are already saved.",
                 bankDetails: {
                     bankCode: existingBankAccount.bankCode,
@@ -171,12 +203,11 @@ export async function PUT(request: Request) {
 
         const banks = await listPaystackBanks();
         const bank = banks.find((candidate) => candidate.code === bankCode);
-        if (!bank) return jsonNoStore({ error: "Choose a bank from the current bank list." }, { status: 400 });
+        if (!bank) return failure(400, "INVALID_BANK_CODE", "Choose a bank from the current bank list.", false);
 
         const verifiedAccount = await resolvePaystackBankAccount(accountNumber, bank.code);
 
         const recipient = await savePaystackTransferRecipient({
-            recipientCode: user.paystackRecipientCode,
             name: verifiedAccount.account_name,
             accountNumber,
             bankCode: bank.code,
@@ -214,6 +245,7 @@ export async function PUT(request: Request) {
         }
 
         return jsonNoStore({
+            success: true,
             message: "Bank details verified and saved.",
             bankDetails: {
                 bankCode: bank.code,

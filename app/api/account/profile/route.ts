@@ -6,6 +6,8 @@ import FreelancerProfile from "@/models/FreelancerProfile";
 import ProfileImageDeletion from "@/models/ProfileImageDeletion";
 import User from "@/models/User";
 import { uploadProfileImage, validateProfileImage } from "@/lib/cloudinary";
+import { createOneTimeToken } from "@/lib/tokens";
+import { sendVerificationEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,7 @@ export async function GET() {
 
     try {
         await connectToDatabase();
-        const user = await User.findById(currentUser.userId).select("firstName lastName name email role country city isVerified isActive").lean();
+        const user = await User.findById(currentUser.userId).select("firstName lastName name email role country city isVerified isActive createdAt updatedAt").lean();
         if (!user) return jsonNoStore({ error: "Account not found." }, { status: 404 });
         const profile = currentUser.role === "employer"
             ? await EmployerProfile.findOne({ user: currentUser.userId }).select("-profileImagePublicId").lean()
@@ -66,13 +68,22 @@ export async function PATCH(request: Request) {
     }
 
     const userUpdates: Record<string, string> = {};
-    for (const field of ["firstName", "lastName", "country", "city"] as const) {
+    for (const field of ["firstName", "lastName", "email", "country", "city"] as const) {
         const value = body[field];
         if (value !== undefined) {
-            if (typeof value !== "string" || value.trim().length === 0 || value.trim().length > 120) {
-                return jsonNoStore({ error: `${field} must be a non-empty value of at most 120 characters.` }, { status: 400 });
+            if (typeof value !== "string" || value.trim().length === 0 || value.trim().length > (field === "email" ? 254 : 120)) {
+                return jsonNoStore({ error: `${field} must be a non-empty value of at most ${field === "email" ? 254 : 120} characters.` }, { status: 400 });
             }
-            userUpdates[field] = value.trim();
+            const normalizedValue = value.trim();
+            if (field === "email") {
+                const email = normalizedValue.toLowerCase();
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    return jsonNoStore({ error: "Enter a valid email address." }, { status: 400 });
+                }
+                userUpdates.email = email;
+            } else {
+                userUpdates[field] = normalizedValue;
+            }
         }
     }
 
@@ -89,6 +100,26 @@ export async function PATCH(request: Request) {
     for (const field of profileFields) {
         if (body[field] === undefined) continue;
         const value = body[field];
+        if (currentUser.role === "employer" && field === "accountType" && (typeof value !== "string" || !["Individual", "Company"].includes(value))) {
+            return jsonNoStore({ error: "accountType has an invalid value." }, { status: 400 });
+        }
+        if (currentUser.role === "employer" && field === "hiringFrequency" && (typeof value !== "string" || !["Occasionally", "Monthly", "Frequently", "For ongoing projects"].includes(value))) {
+            return jsonNoStore({ error: "hiringFrequency has an invalid value." }, { status: 400 });
+        }
+        if (currentUser.role === "employer" && field === "companyWebsite" && typeof value === "string" && value.trim()) {
+            try {
+                const website = new URL(value.trim());
+                if (!["http:", "https:"].includes(website.protocol)) throw new Error("Unsupported website protocol.");
+            } catch {
+                return jsonNoStore({ error: "companyWebsite must be a valid HTTP or HTTPS URL." }, { status: 400 });
+            }
+        }
+        if (currentUser.role === "employer" && field === "companySize" && typeof value === "string" && value.trim()) {
+            const size = Number(value);
+            if (!Number.isSafeInteger(size) || size < 1 || size > 1_000_000_000) {
+                return jsonNoStore({ error: "companySize must be a positive whole number." }, { status: 400 });
+            }
+        }
         if (field === "hourlyRate" && currentUser.role === "freelancer" && value === null) {
             profileUnsets[field] = 1;
             continue;
@@ -105,8 +136,8 @@ export async function PATCH(request: Request) {
         else return jsonNoStore({ error: `${field} has an invalid value.` }, { status: 400 });
     }
 
-    if (profileImage && currentUser.role !== "freelancer") {
-        return jsonNoStore({ error: "Profile image updates are only available for freelancer accounts." }, { status: 403 });
+    if (profileImage && currentUser.role === "admin") {
+        return jsonNoStore({ error: "Profile image updates are not available for admin accounts." }, { status: 403 });
     }
     if (profileImage) {
         const imageError = await validateProfileImage(profileImage);
@@ -122,9 +153,20 @@ export async function PATCH(request: Request) {
         await connectToDatabase();
         const user = await User.findById(currentUser.userId);
         if (!user) return jsonNoStore({ error: "Account not found." }, { status: 404 });
+        const emailChanged = Boolean(userUpdates.email && userUpdates.email !== user.email);
+        if (emailChanged && await User.exists({ email: userUpdates.email, _id: { $ne: user._id } })) {
+            return jsonNoStore({ error: "An account with that email already exists." }, { status: 409 });
+        }
         if (profileImage) uploadedImage = await uploadProfileImage(profileImage);
+        let verification: ReturnType<typeof createOneTimeToken> | undefined;
         Object.assign(user, userUpdates);
         if (userUpdates.firstName || userUpdates.lastName) user.name = `${user.firstName} ${user.lastName}`;
+        if (emailChanged) {
+            verification = createOneTimeToken();
+            user.isVerified = false;
+            user.verificationTokenHash = verification.tokenHash;
+            user.verificationTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        }
         await user.save();
 
         let profile = null;
@@ -134,8 +176,25 @@ export async function PATCH(request: Request) {
         };
         let previousProfileImagePublicId: string | undefined;
         if ((Object.keys(profileUpdates).length > 0 || uploadedImage) && currentUser.role === "employer") {
-            profile = await EmployerProfile.findOneAndUpdate({ user: currentUser.userId }, { $set: profileUpdates }, { returnDocument: "after", runValidators: true }).select("-profileImagePublicId").lean();
+            const existingProfile = uploadedImage
+                ? await EmployerProfile.findOne({ user: currentUser.userId }).select("profileImagePublicId").lean()
+                : null;
+            previousProfileImagePublicId = existingProfile?.profileImagePublicId;
+            profile = await EmployerProfile.findOneAndUpdate(
+                { user: currentUser.userId },
+                { $set: { ...profileUpdates, ...(uploadedImage ? { profileImage: uploadedImage.url, profileImagePublicId: uploadedImage.publicId } : {}) } },
+                { returnDocument: "after", runValidators: true },
+            ).select("-profileImagePublicId").lean();
             if (!profile) throw new Error("Employer profile is unavailable.");
+            if (uploadedImage && previousProfileImagePublicId) {
+                try {
+                    await ProfileImageDeletion.create({ publicIds: [previousProfileImagePublicId] });
+                } catch (cleanupError) {
+                    console.error("Previous profile image cleanup could not be queued.", {
+                        errorName: cleanupError instanceof Error ? cleanupError.name : "UnknownError",
+                    });
+                }
+            }
         } else if ((Object.keys(profileUpdates).length > 0 || Object.keys(profileUnsets).length > 0 || uploadedImage) && currentUser.role === "freelancer") {
             const existingProfile = await FreelancerProfile.findOne({ user: currentUser.userId }).select("profileImagePublicId").lean();
             previousProfileImagePublicId = existingProfile?.profileImagePublicId;
@@ -158,7 +217,36 @@ export async function PATCH(request: Request) {
                 }
             }
         }
-        return jsonNoStore({ success: true, user: { firstName: user.firstName, lastName: user.lastName, name: user.name, country: user.country, city: user.city }, profile });
+        let emailVerificationSent: boolean | undefined;
+        if (verification) {
+            try {
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+                await sendVerificationEmail({ name: user.name, email: user.email, verifyUrl: `${appUrl}/verify?token=${verification.token}` });
+                emailVerificationSent = true;
+            } catch (emailError) {
+                emailVerificationSent = false;
+                console.error("Profile email verification delivery error", {
+                    errorName: emailError instanceof Error ? emailError.name : "UnknownError",
+                });
+            }
+        }
+        return jsonNoStore({
+            success: true,
+            emailVerificationRequired: emailChanged,
+            emailVerificationSent,
+            user: {
+                firstName: user.firstName,
+                lastName: user.lastName,
+                name: user.name,
+                email: user.email,
+                country: user.country,
+                city: user.city,
+                isVerified: user.isVerified,
+                createdAt: user.createdAt,
+                updatedAt: user.updatedAt,
+            },
+            profile,
+        });
     } catch (error) {
         if (uploadedImage) {
             try {
@@ -167,6 +255,9 @@ export async function PATCH(request: Request) {
                 console.error("Uploaded profile image cleanup could not be queued.", {
                     errorName: cleanupError instanceof Error ? cleanupError.name : "UnknownError",
                 });
+            }
+            if (typeof error === "object" && error !== null && "code" in error && error.code === 11000) {
+                return jsonNoStore({ error: "An account with that email already exists." }, { status: 409 });
             }
         }
         console.error("Profile update error:", error);

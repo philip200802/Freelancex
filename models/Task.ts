@@ -13,8 +13,11 @@ export interface ITask extends Document {
     amount: number;
     category: TaskCategory;
     applicationCount: number;
+    createRequestId?: string;
     status: TaskStatus;
     paystackReference?: string;
+    isDeleted: boolean;
+    deletedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -29,8 +32,23 @@ const TaskSchema = new Schema<ITask>({
     amount: { type: Number, required: true, min: 1 },
     category: { type: String, enum: ["Development", "Design", "Writing", "Marketing"], required: true },
     applicationCount: { type: Number, min: 0, default: 0 },
+    createRequestId: { type: String, trim: true, select: false },
     status: { type: String, enum: ["pending_approval", "open", "awaiting_funding", "funded", "in_progress", "submitted", "revision_requested", "completed", "disputed", "cancelled"], default: "open" },
     paystackReference: { type: String },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date },
 }, { timestamps: true });
 
-export default mongoose.models.Task || mongoose.model<ITask>("Task", TaskSchema);
+TaskSchema.index({ employer: 1, createRequestId: 1 }, { unique: true, partialFilterExpression: { createRequestId: { $type: "string" } } });
+
+const cachedTaskModel = mongoose.models.Task;
+if (cachedTaskModel) {
+    if (!cachedTaskModel.schema.path("isDeleted")) {
+        cachedTaskModel.schema.add({
+            isDeleted: { type: Boolean, default: false, index: true },
+            deletedAt: { type: Date },
+        });
+    }
+}
+
+export default cachedTaskModel || mongoose.model<ITask>("Task", TaskSchema);

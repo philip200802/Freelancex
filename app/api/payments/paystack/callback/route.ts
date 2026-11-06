@@ -36,7 +36,13 @@ export async function GET(request: Request) {
         const payment = await PaymentTransaction.findOne({ reference, employer: user.userId }).select("task").lean();
         if (!payment) return NextResponse.redirect(new URL("/client/dashboard/payments?payment=not-found", appOrigin));
 
+        console.info("Paystack client callback received.", { reference, projectId: payment.task.toString() });
         const result = await settlePaystackTransaction(reference);
+        console.info("Paystack client callback verification completed.", {
+            reference,
+            paymentStatus: result.status,
+            projectStatus: result.taskStatus,
+        });
         const destination = new URL(`/client/dashboard/projects/${payment.task.toString()}`, appOrigin);
         destination.searchParams.set("payment", result.status);
         if (result.status === "success" && !result.projectActivated) {
@@ -47,6 +53,7 @@ export async function GET(request: Request) {
         console.error("Paystack callback verification failed:", {
             reference,
             errorName: error instanceof Error ? error.name : "UnknownError",
+            errorCode: error instanceof Error && "code" in error ? String(error.code) : undefined,
         });
         const destination = new URL("/client/dashboard/payments?payment=verification-error", appOrigin);
         return NextResponse.redirect(destination);

@@ -163,11 +163,13 @@ export async function POST(request: Request, context: { params: Promise<{ conver
                 if (preference?.inAppNotifications !== false) {
                     await Notification.create({
                         recipient,
+                        recipientRole: recipientUser?.role === "employer" ? "employer" : "freelancer",
                         actor: user.userId,
                         type: "message",
                         title: "New message",
                         body: "You have a new project message.",
                         relatedTask: conversation.task,
+                        eventKey: `message:${message._id}`,
                         href: recipientUser?.role === "employer" ? "/client/dashboard/messages" : "/freelancer/dashboard/messages",
                     });
                 }
