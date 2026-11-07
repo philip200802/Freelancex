@@ -5,6 +5,7 @@ export interface IEmployerProfile extends Document {
     accountType: "Individual" | "Company";
     companyName?: string;
     industry?: string;
+    companyDescription?: string;
     companyWebsite?: string;
     companySize?: string;
     position?: string;
@@ -21,6 +22,7 @@ const EmployerProfileSchema = new Schema<IEmployerProfile>({
     accountType: { type: String, enum: ["Individual", "Company"], required: true },
     companyName: { type: String, trim: true },
     industry: { type: String, trim: true },
+    companyDescription: { type: String, trim: true, maxlength: 5000 },
     companyWebsite: { type: String, trim: true },
     companySize: { type: String, trim: true },
     position: { type: String, trim: true },
@@ -32,4 +34,9 @@ const EmployerProfileSchema = new Schema<IEmployerProfile>({
     profileImagePublicId: { type: String, trim: true },
 }, { timestamps: true });
 
-export default mongoose.models.EmployerProfile || mongoose.model<IEmployerProfile>("EmployerProfile", EmployerProfileSchema);
+const cachedEmployerProfile = mongoose.models.EmployerProfile;
+if (cachedEmployerProfile && !cachedEmployerProfile.schema.path("companyDescription")) {
+    cachedEmployerProfile.schema.add({ companyDescription: { type: String, trim: true, maxlength: 5000 } });
+}
+
+export default cachedEmployerProfile || mongoose.model<IEmployerProfile>("EmployerProfile", EmployerProfileSchema);

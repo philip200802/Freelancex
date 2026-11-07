@@ -30,11 +30,16 @@ const reasonLabels: Record<string, string> = {
 };
 const statusLabels: Record<string, string> = {
     open: "Open",
-    under_review: "Under Review",
+    awaiting_administrator_review: "Awaiting Administrator Review",
+    under_review: "Under Investigation",
     awaiting_client_response: "Awaiting Client Response",
     awaiting_freelancer_response: "Awaiting Freelancer Response",
+    awaiting_additional_evidence: "Awaiting Additional Evidence",
+    resolution_proposed: "Resolution Proposed",
     resolved: "Resolved",
     closed: "Closed",
+    escalated: "Escalated",
+    reopened: "Reopened",
 };
 
 export default function DisputesDashboard({ role }: { role: Role }) {

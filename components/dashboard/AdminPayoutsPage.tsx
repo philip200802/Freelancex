@@ -206,12 +206,12 @@ export default function AdminPayoutsPage() {
         return false;
     });
 
-    return <section className="admin-activity">
+    return <section className="admin-activity admin-payouts">
         <p className="muted-copy">FreelanceX does not initiate bank transfers. The 24-hour deadline is a processing target, not a guarantee of external transfer completion. Record the freelancer&apos;s net amount only after manually transferring it.</p>
         {success && <p className="success-message" role="status">{success}</p>}
         {error && <p className="form-error" role="alert">{error}<button className="button button-quiet" onClick={() => setRetry((current) => current + 1)} type="button">Retry</button></p>}
 
-        <section className="dashboard-stat-grid" aria-label="Payout summary">
+        <section className="dashboard-stat-grid admin-payout-summary-grid" aria-label="Payout summary">
             <article className="dashboard-stat-card"><span>Pending payouts</span><strong>{summary.pendingCount}</strong></article>
             <article className="dashboard-stat-card"><span>Overdue payouts</span><strong>{overdueCount}</strong></article>
             <article className="dashboard-stat-card"><span>Blocked payouts</span><strong>{blockedCount}</strong></article>
@@ -231,31 +231,39 @@ export default function AdminPayoutsPage() {
             ] as const).map(([tab, label]) => <button aria-pressed={activeTab === tab} className={activeTab === tab ? "button button-primary" : "button button-quiet"} key={tab} onClick={() => setActiveTab(tab)} type="button">{label}</button>)}
         </nav>
 
-        {activeTab !== "completed" && <section className="dashboard-panel">
+        {activeTab !== "completed" && <section className="dashboard-panel admin-payout-list-panel">
             <div className="dashboard-table-heading"><span>{loading ? "Loading approved payouts..." : `${visibleProjects.length} ${activeTab === "awaiting" ? "awaiting processing" : activeTab} payouts`}</span></div>
             {!loading && visibleProjects.length === 0 ? <div className="dashboard-empty"><strong>No payouts in this section.</strong><p>Approved projects appear here when they match this status.</p></div>
-                : <div className="dashboard-table">{visibleProjects.map((project) => <article className="dashboard-table-row admin-payout-eligible-row" key={project.taskId}>
-                    <div>
-                        <strong>{project.taskTitle}</strong>
-                        <span>{project.freelancerName} · Client: {project.clientName}{project.bankName ? ` · ${project.bankName}` : ""}{project.accountName ? ` · ${project.accountName}` : ""}</span>
-                        <small>Gross {money.format(project.grossAmountKobo / 100)} · Commission ({project.commissionRatePercent}%) {money.format(project.commissionAmountKobo / 100)} · Net due {money.format(project.amountKobo / 100)}</small>
-                        <small>{project.maskedAccountNumber || "No verified account"} · Approved {formatDate(project.approvedAt)} · Due {formatDate(project.dueAt)} · {project.paymentVerifiedAt ? `Payment verified ${formatDate(project.paymentVerifiedAt)}` : "Payment verification unavailable"}</small>
-                        <span className={`status-badge status-${project.dueStatus}`}>{project.dueStatus === "overdue" ? "Overdue" : "Due within 24 hours"}</span>
-                        {project.blockReason && <p className="form-error" role="status">Blocked: {project.blockReason}</p>}
-                        {project.failureReason && <p className="form-error">Previous failure: {project.failureReason}</p>}
-                        {project.approvedDeliverables && <div className="admin-approved-deliverables">
-                            <strong>Approved deliverables</strong>
-                            <p>{project.approvedDeliverables.message}</p>
-                            {project.approvedDeliverables.attachments.map((file) => <a href={file.url} key={file.url} rel="noreferrer" target="_blank">{file.fileName}</a>)}
-                            {project.approvedDeliverables.links.map((link) => <a href={link} key={link} rel="noreferrer" target="_blank">{new URL(link).hostname}</a>)}
-                        </div>}
+                : <div className="admin-payout-review-list">{visibleProjects.map((project) => <article className="admin-payout-review-card" key={project.taskId}>
+                    <header className="admin-payout-review-heading">
+                        <div><span className="admin-payout-field-label">Freelancer</span><strong>{project.freelancerName}</strong></div>
+                        <div className="admin-payout-review-status">
+                            <span className={`status-badge status-${project.payoutStatus}`}>{project.payoutStatus}</span>
+                            <span className={`status-badge status-${project.dueStatus}`}>{project.dueStatus === "overdue" ? "Overdue" : "Due within 24 hours"}</span>
+                        </div>
+                    </header>
+                    <div className="admin-payout-review-grid">
+                        <div className="admin-payout-review-cell"><span className="admin-payout-field-label">Project</span><strong>{project.taskTitle}</strong><small>Reference {project.taskId}</small><small>Client: {project.clientName}</small></div>
+                        <div className="admin-payout-review-cell"><span className="admin-payout-field-label">Bank details</span><strong>{project.bankName || "Bank account unavailable"}</strong><span>{project.accountName || "Account name unavailable"}</span><small>{project.maskedAccountNumber || "No verified account"}</small></div>
+                        <div className="admin-payout-review-cell admin-payout-amounts"><span className="admin-payout-field-label">Amount breakdown</span><span>Gross <strong>{money.format(project.grossAmountKobo / 100)}</strong></span><span>Commission ({project.commissionRatePercent}%) <strong>{money.format(project.commissionAmountKobo / 100)}</strong></span><span>Freelancer net <strong>{money.format(project.amountKobo / 100)}</strong></span></div>
+                        <div className="admin-payout-review-cell"><span className="admin-payout-field-label">Dates</span><span>Approved <strong>{formatDate(project.approvedAt)}</strong></span><span>Due <strong>{formatDate(project.dueAt)}</strong></span><small>{project.paymentVerifiedAt ? `Payment verified ${formatDate(project.paymentVerifiedAt)}` : "Payment verification unavailable"}</small></div>
+                    </div>
+                    {project.blockReason && <p className="form-error" role="status">Blocked: {project.blockReason}</p>}
+                    {project.failureReason && <p className="form-error">Previous failure: {project.failureReason}</p>}
+                    {project.approvedDeliverables && <div className="admin-approved-deliverables">
+                        <strong>Approved deliverables</strong>
+                        <p>{project.approvedDeliverables.message}</p>
+                        {project.approvedDeliverables.attachments.map((file) => <a href={file.url} key={file.url} rel="noreferrer" target="_blank">{file.fileName}</a>)}
+                        {project.approvedDeliverables.links.map((link) => <a href={link} key={link} rel="noreferrer" target="_blank">{new URL(link).hostname}</a>)}
+                    </div>}
+                    <div className="admin-payout-review-actions">
                         {project.bankAccountStatus === "verified" && !project.blockReason && <form className="admin-payout-form" onSubmit={(event) => void recordPayout(event, project)}>
                             <label>Manual transfer reference<input className="filter-input" maxLength={160} required value={transferReferences[project.taskId] || ""} onChange={(event) => setTransferReferences((current) => ({ ...current, [project.taskId]: event.target.value }))} /></label>
                             <label>Receipt URL (optional)<input className="filter-input" maxLength={2048} type="url" value={receiptUrls[project.taskId] || ""} onChange={(event) => setReceiptUrls((current) => ({ ...current, [project.taskId]: event.target.value }))} /></label>
                             <label className="admin-payout-confirm"><input checked={confirmed[project.taskId] || false} type="checkbox" onChange={(event) => setConfirmed((current) => ({ ...current, [project.taskId]: event.target.checked }))} /> I confirm I manually transferred the net payout amount shown above.</label>
                             <button className="button button-primary" disabled={Boolean(submittingTask) || !confirmed[project.taskId] || !(transferReferences[project.taskId] || "").trim()} type="submit">{submittingTask === project.taskId ? "Recording..." : "Record completed net payout"}</button>
                         </form>}
-                        <form className="admin-payout-form" onSubmit={(event) => void markPayoutFailed(event, project)}>
+                        <form className="admin-payout-form admin-payout-failure-form" onSubmit={(event) => void markPayoutFailed(event, project)}>
                             <label>Record transfer failure or rejection<input className="filter-input" maxLength={1000} value={failureReasons[project.taskId] || ""} onChange={(event) => setFailureReasons((current) => ({ ...current, [project.taskId]: event.target.value }))} placeholder="Reason for failure or rejection" /></label>
                             <button className="button button-quiet" disabled={Boolean(submittingTask) || !(failureReasons[project.taskId] || "").trim()} type="submit">{submittingTask === project.taskId ? "Saving..." : "Mark failed or rejected"}</button>
                         </form>
@@ -264,7 +272,7 @@ export default function AdminPayoutsPage() {
         </section>}
 
         {activeTab === "completed" && <section aria-live="polite" className="dashboard-panel">
-            <form className="admin-transaction-filters" onSubmit={searchPayouts}>
+            <form className="admin-transaction-filters admin-payout-history-filters" onSubmit={searchPayouts}>
                 <label>Search freelancer, project, or reference<input className="filter-input" maxLength={120} onChange={(event) => setDraftQuery(event.target.value)} placeholder="Freelancer, project, or transfer reference" value={draftQuery} /></label>
                 <label>Status<select className="filter-input" onChange={(event) => { setHistoryStatus(event.target.value); setPage(1); }} value={historyStatus}>
                     <option value="all">All statuses</option><option value="pending">Pending</option><option value="failed">Failed</option><option value="rejected">Rejected</option><option value="completed">Completed</option>
@@ -278,17 +286,37 @@ export default function AdminPayoutsPage() {
             <div className="dashboard-table-heading"><span>{loading ? "Loading payout history..." : `${pagination.total} payout records`}</span></div>
             {loading ? <div className="activity-loading-list" role="status">Loading payout history...</div>
                 : payouts.length === 0 ? <div className="dashboard-empty"><strong>No payout records.</strong><p>Pending, failed, and completed payout records appear here.</p></div>
-                    : <div className="dashboard-table">{payouts.map((payout) => <article className="dashboard-table-row" key={payout.id}>
-                        <div>
-                            <strong>{payout.freelancerName} · {payout.taskTitle}</strong>
-                            <span>Project reference {payout.taskId} · {payout.bankName || "Bank account pending"}{payout.accountName ? ` · ${payout.accountName}` : ""}{payout.maskedAccountNumber ? ` · ${payout.maskedAccountNumber}` : ""}</span>
-                            <small>Net {money.format(payout.amountKobo / 100)} {payout.currency} · Approved {formatDate(payout.approvedAt)} · Due {formatDate(payout.dueAt)}</small>
-                            <small>{payout.grossAmountKobo !== null && payout.commissionAmountKobo !== null ? `Gross ${money.format(payout.grossAmountKobo / 100)} · Commission ${money.format(payout.commissionAmountKobo / 100)} · ` : ""}{payout.transferReference ? `Transfer reference: ${payout.transferReference} · ` : ""}{payout.adminName ? `Recorded by ${payout.adminName}` : payout.dueAt ? `Due ${formatDate(payout.dueAt)}` : ""}</small>
-                            {payout.failureReason && <small>Failure: {payout.failureReason}</small>}
-                            {payout.receiptUrl && <a href={payout.receiptUrl} rel="noreferrer" target="_blank">View transfer receipt</a>}
-                        </div>
-                        <div className="admin-transaction-status"><span className={`status-badge status-${payout.status}`}>{payout.status}</span>{payout.transferredAt && <time dateTime={payout.transferredAt}>{formatDate(payout.transferredAt)}</time>}</div>
-                    </article>)}</div>}
+                    : <div className="admin-data-table-scroll" role="region" aria-label="Payout history" tabIndex={0}>
+                        <table className="admin-data-table admin-payout-history-table">
+                            <thead><tr>
+                                <th scope="col">Freelancer</th>
+                                <th scope="col">Project</th>
+                                <th scope="col">Bank details</th>
+                                <th scope="col">Amount breakdown</th>
+                                <th scope="col">Dates</th>
+                                <th scope="col">Transfer reference</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Actions</th>
+                            </tr></thead>
+                            <tbody>{payouts.map((payout) => <tr key={payout.id}>
+                                <td><strong>{payout.freelancerName}</strong></td>
+                                <td><div className="admin-table-cell-stack"><strong>{payout.taskTitle}</strong><span>Reference {payout.taskId}</span></div></td>
+                                <td><div className="admin-table-cell-stack"><strong>{payout.bankName || "Bank account pending"}</strong><span>{payout.accountName || "Account name unavailable"}</span><small>{payout.maskedAccountNumber || "No account number"}</small></div></td>
+                                <td><div className="admin-table-cell-stack admin-payout-amounts">
+                                    <span>Gross <strong>{payout.grossAmountKobo === null ? "Unavailable" : money.format(payout.grossAmountKobo / 100)}</strong></span>
+                                    <span>Commission <strong>{payout.commissionAmountKobo === null ? "Unavailable" : money.format(payout.commissionAmountKobo / 100)}</strong></span>
+                                    <span>Freelancer net <strong>{money.format(payout.amountKobo / 100)}</strong></span>
+                                </div></td>
+                                <td><div className="admin-table-cell-stack"><span>Approved <strong>{formatDate(payout.approvedAt)}</strong></span><span>Due <strong>{formatDate(payout.dueAt)}</strong></span><span>Completed <strong>{formatDate(payout.transferredAt)}</strong></span></div></td>
+                                <td className="admin-transfer-reference">{payout.transferReference || "Not provided"}</td>
+                                <td><div className="admin-table-cell-stack"><span className={`status-badge status-${payout.status}`}>{payout.status}</span>
+                                    {payout.adminName && <small>Recorded by {payout.adminName}</small>}
+                                    {payout.failureReason && <small>Failure: {payout.failureReason}</small>}
+                                </div></td>
+                                <td className="admin-table-actions-cell">{payout.receiptUrl ? <a className="text-link" href={payout.receiptUrl} rel="noreferrer" target="_blank">View receipt</a> : <span>—</span>}</td>
+                            </tr>)}</tbody>
+                        </table>
+                    </div>}
         </section>}
 
         {activeTab === "completed" && !loading && pagination.totalPages > 1 && <nav aria-label="Payout history pages" className="admin-activity-pagination">

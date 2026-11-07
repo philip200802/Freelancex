@@ -100,7 +100,7 @@ export default function AdminBankAccountsPage() {
         }
     }
 
-    return <section aria-label="Freelancer payout bank accounts" className="admin-activity">
+    return <section aria-label="Freelancer payout bank accounts" className="admin-activity admin-bank-accounts">
         <p className="muted-copy">Full account numbers are encrypted at rest and masked by default. Every reveal requires a reason and is recorded in admin activity logs.</p>
         <section aria-label="Bank account summary" className="dashboard-stat-grid">
             <article className="dashboard-stat-card"><span>Total freelancers</span><strong>{summary.totalFreelancers}</strong></article>
@@ -108,7 +108,7 @@ export default function AdminBankAccountsPage() {
             <article className="dashboard-stat-card"><span>Unverified bank accounts</span><strong>{summary.unverifiedAccounts}</strong></article>
             <article className="dashboard-stat-card"><span>No bank account</span><strong>{summary.freelancersWithoutAccounts}</strong></article>
         </section>
-        <form className="admin-transaction-filters" onSubmit={search}>
+        <form className="admin-transaction-filters admin-bank-filters" onSubmit={search}>
             <label>Search freelancers or bank details<input className="filter-input" maxLength={120} onChange={(event) => setDraftQuery(event.target.value)} placeholder="Freelancer, bank, or account name" value={draftQuery} /></label>
             <label>Verification<select className="filter-input" onChange={(event) => { setVerification(event.target.value); setPage(1); setRevealedNumbers({}); }} value={verification}>
                 <option value="all">All freelancers</option>
@@ -123,28 +123,39 @@ export default function AdminBankAccountsPage() {
         {Object.keys(revealedNumbers).length > 0 && <button className="button button-quiet" onClick={() => setRevealedNumbers({})} type="button">Hide revealed numbers</button>}
         {revealError && <p className="form-error" role="alert">{revealError}</p>}
 
-        <section aria-live="polite" className="dashboard-panel">
+        <section aria-live="polite" className="dashboard-panel admin-bank-table-panel">
             <div className="dashboard-table-heading"><span>{loading ? "Loading bank accounts..." : `${pagination.total} freelancers`}</span></div>
             {loading ? <div className="activity-loading-list" role="status">Loading bank accounts...</div>
                 : error ? <div className="admin-activity-error" role="alert"><p>{error}</p></div>
                     : accounts.length === 0 ? <div className="dashboard-empty"><strong>No freelancers found.</strong><p>Try a different search or verification filter.</p></div>
-                        : <div className="dashboard-table">{accounts.map((account) => <article className="dashboard-table-row" key={account.userId}>
-                            <div>
-                                <strong>{account.freelancerName}</strong>
-                                <span>{account.freelancerEmail}</span>
-                                <small>{account.bankName || "No bank account"}{account.accountName ? ` · ${account.accountName}` : ""} · {account.maskedAccountNumber || "No account number"}</small>
-                                <small>Verified {formatDate(account.verifiedAt, "Not verified")} · Updated {formatDate(account.updatedAt)}</small>
-                                {revealedNumbers[account.userId] && <small aria-live="polite">Full account number: <strong>{revealedNumbers[account.userId]}</strong></small>}
-                            </div>
-                            <div className="admin-transaction-status">
-                                <span className={`status-badge status-${account.verificationStatus}`}>{account.verificationStatus}</span>
-                                <small>{account.verificationStatus === "verified" ? "Eligible for payout" : "Not eligible for payout"}</small>
-                                {account.verificationStatus === "verified" && !revealedNumbers[account.userId] &&
-                                    <button className="button button-quiet" disabled={Boolean(revealingUser) || revealReason.trim().length < 10} onClick={() => void revealAccount(account.userId)} type="button">
-                                        {revealingUser === account.userId ? "Recording access..." : "Reveal account"}
-                                    </button>}
-                            </div>
-                        </article>)}</div>}
+                        : <div className="admin-data-table-scroll" role="region" aria-label="Freelancer bank accounts" tabIndex={0}>
+                            <table className="admin-data-table admin-bank-data-table">
+                                <thead><tr>
+                                    <th scope="col">Freelancer</th>
+                                    <th scope="col">Bank</th>
+                                    <th scope="col">Account number</th>
+                                    <th scope="col">Verification</th>
+                                    <th scope="col">Payout eligibility</th>
+                                    <th scope="col">Actions</th>
+                                </tr></thead>
+                                <tbody>{accounts.map((account) => <tr key={account.userId}>
+                                    <td><div className="admin-table-cell-stack"><strong>{account.freelancerName}</strong><span>{account.freelancerEmail}</span></div></td>
+                                    <td><div className="admin-table-cell-stack"><strong>{account.bankName || "No bank account"}</strong><span>{account.accountName || "Account name unavailable"}</span><small>Updated {formatDate(account.updatedAt)}</small></div></td>
+                                    <td><div className="admin-table-cell-stack"><strong className="admin-account-number">{account.maskedAccountNumber || "No account number"}</strong>
+                                        {revealedNumbers[account.userId] && <span aria-live="polite">Revealed: <strong className="admin-account-number">{revealedNumbers[account.userId]}</strong></span>}
+                                    </div></td>
+                                    <td><div className="admin-table-cell-stack admin-verification-cell">
+                                        <span className={`status-badge status-${account.verificationStatus}`}>{account.verificationStatus}</span>
+                                        <small>{account.verificationStatus === "verified" ? `Verified ${formatDate(account.verifiedAt, "Date unavailable")}` : "Not verified"}</small>
+                                    </div></td>
+                                    <td><span className={`status-badge ${account.verificationStatus === "verified" ? "status-verified" : "status-unverified"}`}>{account.verificationStatus === "verified" ? "Eligible" : "Not eligible"}</span></td>
+                                    <td className="admin-table-actions-cell">{account.verificationStatus === "verified" && !revealedNumbers[account.userId] &&
+                                        <button className="button button-quiet" disabled={Boolean(revealingUser) || revealReason.trim().length < 10} onClick={() => void revealAccount(account.userId)} type="button">
+                                            {revealingUser === account.userId ? "Recording access..." : "Reveal account"}
+                                        </button>}</td>
+                                </tr>)}</tbody>
+                            </table>
+                        </div>}
         </section>
 
         {!loading && !error && pagination.totalPages > 1 && <nav aria-label="Bank account pages" className="admin-activity-pagination">

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-type DisputeStatus = "open" | "under_review" | "awaiting_client_response" | "awaiting_freelancer_response" | "resolved" | "closed";
+type DisputeStatus = "open" | "awaiting_administrator_review" | "under_review" | "awaiting_client_response" | "awaiting_freelancer_response" | "awaiting_additional_evidence" | "resolution_proposed" | "resolved" | "closed" | "escalated" | "reopened";
 type Dispute = {
     id: string;
     task: { _id: string; title: string; amount: number; status: string };
@@ -24,11 +24,16 @@ type PendingRequest = { requestId: string; action: string; message: string; stat
 
 const statuses: Array<[DisputeStatus, string]> = [
     ["open", "Open"],
-    ["under_review", "Under Review"],
+    ["awaiting_administrator_review", "Awaiting Administrator Review"],
+    ["under_review", "Under Investigation"],
     ["awaiting_client_response", "Awaiting Client Response"],
     ["awaiting_freelancer_response", "Awaiting Freelancer Response"],
+    ["awaiting_additional_evidence", "Awaiting Additional Evidence"],
+    ["resolution_proposed", "Resolution Proposed"],
     ["resolved", "Resolved"],
     ["closed", "Closed"],
+    ["escalated", "Escalated"],
+    ["reopened", "Reopened"],
 ];
 const reasonLabels: Record<string, string> = {
     work_quality: "Work quality",

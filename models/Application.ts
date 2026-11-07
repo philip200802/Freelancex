@@ -5,7 +5,7 @@ export type ApplicationStatus = "pending" | "accepted" | "rejected";
 export interface IApplication extends Document {
     task: mongoose.Types.ObjectId;
     employer?: mongoose.Types.ObjectId;
-    freelancer?: mongoose.Types.ObjectId;
+    freelancer: mongoose.Types.ObjectId;
     employerNameSnapshot?: string;
     freelancerNameSnapshot?: string;
     message: string;
@@ -17,7 +17,7 @@ export interface IApplication extends Document {
 const ApplicationSchema = new Schema<IApplication>({
     task: { type: Schema.Types.ObjectId, ref: "Task", required: true },
     employer: { type: Schema.Types.ObjectId, ref: "User" },
-    freelancer: { type: Schema.Types.ObjectId, ref: "User" },
+    freelancer: { type: Schema.Types.ObjectId, ref: "User", required: true },
     employerNameSnapshot: { type: String, trim: true },
     freelancerNameSnapshot: { type: String, trim: true },
     message: { type: String, trim: true, maxlength: 5000, default: "" },

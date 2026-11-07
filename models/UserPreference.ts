@@ -5,6 +5,8 @@ export interface IUserPreference extends Document {
     emailNotifications: boolean;
     inAppNotifications: boolean;
     profileVisibility: "public" | "private";
+    emailVisibility: boolean;
+    companyInfoVisibility: boolean;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -14,6 +16,16 @@ const UserPreferenceSchema = new Schema<IUserPreference>({
     emailNotifications: { type: Boolean, default: true },
     inAppNotifications: { type: Boolean, default: true },
     profileVisibility: { type: String, enum: ["public", "private"], default: "public" },
+    emailVisibility: { type: Boolean, default: false },
+    companyInfoVisibility: { type: Boolean, default: true },
 }, { timestamps: true });
 
-export default mongoose.models.UserPreference || mongoose.model<IUserPreference>("UserPreference", UserPreferenceSchema);
+const cachedUserPreference = mongoose.models.UserPreference;
+if (cachedUserPreference) {
+    const missingPreferencePaths: Record<string, mongoose.SchemaDefinitionProperty<unknown>> = {};
+    if (!cachedUserPreference.schema.path("emailVisibility")) missingPreferencePaths.emailVisibility = { type: Boolean, default: false };
+    if (!cachedUserPreference.schema.path("companyInfoVisibility")) missingPreferencePaths.companyInfoVisibility = { type: Boolean, default: true };
+    if (Object.keys(missingPreferencePaths).length) cachedUserPreference.schema.add(missingPreferencePaths);
+}
+
+export default cachedUserPreference || mongoose.model<IUserPreference>("UserPreference", UserPreferenceSchema);

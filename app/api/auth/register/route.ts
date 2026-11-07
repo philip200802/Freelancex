@@ -7,11 +7,9 @@ import { sendVerificationEmail } from "@/lib/email";
 import FreelancerProfile from "@/models/FreelancerProfile";
 import EmployerProfile from "@/models/EmployerProfile";
 import { uploadProfileImage, validateProfileImage } from "@/lib/cloudinary";
+import { validateFreelancerRegistrationProfile } from "@/lib/registration-validation";
 
 const allowedRoles: UserRole[] = ["employer", "freelancer"];
-const freelancerExperienceLevels = ["Beginner", "Intermediate", "Expert"] as const;
-const freelancerWorkTypes = ["Freelance", "Contract", "Part-time"] as const;
-const freelancerAvailability = ["Available", "Busy", "Not currently available"] as const;
 const employerAccountTypes = ["Individual", "Company"] as const;
 const employerHiringFrequencies = ["Occasionally", "Monthly", "Frequently", "For ongoing projects"] as const;
 
@@ -68,9 +66,7 @@ export async function POST(request: Request) {
         const profileData = body.profileData as Record<string, unknown> | undefined;
         if (!isRecord(profileData)) return NextResponse.json({ error: "Role profile information is required." }, { status: 400 });
         const profileError = role === "freelancer"
-            ? !String(profileData.professionalTitle || "").trim() || !String(profileData.category || "").trim() || !Array.isArray(profileData.skills) || profileData.skills.length === 0 || !String(profileData.bio || "").trim() || !isAllowedValue(profileData.experienceLevel, freelancerExperienceLevels) || !isAllowedValue(profileData.workType, freelancerWorkTypes) || !isAllowedValue(profileData.availability, freelancerAvailability)
-                ? "Complete the freelancer profile with valid experience, work type, and availability values."
-                : ""
+            ? validateFreelancerRegistrationProfile(profileData, Boolean(profileImage))
             : !isAllowedValue(profileData.accountType, employerAccountTypes) || !Array.isArray(profileData.hiringCategories) || profileData.hiringCategories.length === 0 || !isAllowedValue(profileData.hiringFrequency, employerHiringFrequencies) || (profileData.accountType === "Company" && (!String(profileData.companyName || "").trim() || !String(profileData.industry || "").trim() || !String(profileData.companySize || "").trim() || !String(profileData.position || "").trim()))
                 ? "Complete the employer profile with valid account type and hiring preference values."
                 : "";

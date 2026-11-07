@@ -10,6 +10,7 @@ type Job = {
     category: string;
     budget: number;
     posted: string;
+    employer: { id: string | null; name: string } | null;
 };
 type JobPagination = { page: number; pageSize: number; totalCount: number; totalPages: number };
 
@@ -37,7 +38,7 @@ export default function JobBoard({ detailsHrefPrefix = "/jobs/" }: { detailsHref
                 if (maximum !== "Any budget") params.set("maxBudget", maximum);
                 const response = await fetch(`/api/tasks?${params.toString()}`, { cache: "no-store", signal: controller.signal });
                 const result = await response.json() as {
-                    tasks?: Array<{ _id: string; title: string; description: string; amount: number; category: string; createdAt: string }>;
+                    tasks?: Array<{ _id: string; title: string; description: string; amount: number; category: string; createdAt: string; employer?: { id: string | null; name: string } | null }>;
                     pagination?: JobPagination;
                     error?: string;
                 };
@@ -52,6 +53,7 @@ export default function JobBoard({ detailsHrefPrefix = "/jobs/" }: { detailsHref
                     category: task.category === "Design" ? "Design & Brand" : task.category === "Writing" ? "Writing & Content" : task.category,
                     budget: task.amount,
                     posted: new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(Math.round((new Date(task.createdAt).getTime() - Date.now()) / 86400000), "day"),
+                    employer: task.employer || null,
                 })));
                 setPagination(result.pagination);
                 setLoadState("success");
@@ -109,7 +111,7 @@ export default function JobBoard({ detailsHrefPrefix = "/jobs/" }: { detailsHref
             {loadState === "success" && jobs.length > 0 && <div className="job-grid">{jobs.map((job) => <article className="job-card" key={job.id}>
                 <div className="job-card-top"><div><span className="tag">{job.category}</span><h2>{job.title}</h2></div><div className="job-budget">{money.format(job.budget)}</div></div>
                 <p>{job.description}</p>
-                <div className="job-meta"><span>{job.posted}</span><span>Accepting applications</span><Link className="job-link" href={`${detailsHrefPrefix}${job.id}`}>View details &rarr;</Link></div>
+                <div className="job-meta"><span>{job.posted}</span><span>Accepting applications</span>{job.employer?.id && <Link className="job-link" href={`/profiles/${job.employer.id}`}>Client: {job.employer.name}</Link>}<Link className="job-link" href={`${detailsHrefPrefix}${job.id}`}>View details &rarr;</Link></div>
             </article>)}</div>}
             {loadState === "success" && pagination.totalPages > 1 && <nav aria-label="Job result pages" className="job-pagination">
                 <button className="button button-quiet" disabled={pagination.page <= 1} onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))} type="button">Previous</button>

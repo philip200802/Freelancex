@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-type DisputeStatus = "open" | "under_review" | "awaiting_client_response" | "awaiting_freelancer_response" | "resolved" | "closed";
+type DisputeStatus = "open" | "awaiting_administrator_review" | "under_review" | "awaiting_client_response" | "awaiting_freelancer_response" | "awaiting_additional_evidence" | "resolution_proposed" | "resolved" | "closed" | "escalated" | "reopened";
 type DisputeHistoryEntry = { entryId: string; authorId: string; authorRole: string; authorName?: string; message: string; attachments: string[]; createdAt: string };
 type Dispute = {
     id: string;
@@ -28,11 +28,16 @@ const reasons = [
 ];
 const statusLabels: Record<DisputeStatus, string> = {
     open: "Open",
-    under_review: "Under Review",
+    awaiting_administrator_review: "Awaiting Administrator Review",
+    under_review: "Under Investigation",
     awaiting_client_response: "Awaiting Client Response",
     awaiting_freelancer_response: "Awaiting Freelancer Response",
+    awaiting_additional_evidence: "Awaiting Additional Evidence",
+    resolution_proposed: "Resolution Proposed",
     resolved: "Resolved",
     closed: "Closed",
+    escalated: "Escalated",
+    reopened: "Reopened",
 };
 
 export default function ProjectDispute({ projectId, projectStatus, role }: ProjectDisputeProps) {

@@ -18,7 +18,13 @@ export async function GET() {
     try {
         await connectToDatabase();
         const preferences = await UserPreference.findOne({ user: user.userId }).lean();
-        return jsonNoStore({ preferences: preferences || { emailNotifications: true, inAppNotifications: true, profileVisibility: "public" } });
+        return jsonNoStore({ preferences: {
+            emailNotifications: preferences?.emailNotifications ?? true,
+            inAppNotifications: preferences?.inAppNotifications ?? true,
+            profileVisibility: preferences?.profileVisibility ?? "public",
+            emailVisibility: preferences?.emailVisibility ?? false,
+            companyInfoVisibility: preferences?.companyInfoVisibility ?? true,
+        } });
     } catch (error) {
         console.error("Preference retrieval error:", error);
         return jsonNoStore({ error: "Settings are temporarily unavailable." }, { status: 503 });
@@ -29,13 +35,19 @@ export async function PUT(request: Request) {
     const user = await getCurrentUser();
     if (!user) return jsonNoStore({ error: "Authentication required." }, { status: 401 });
 
-    let body: { emailNotifications?: unknown; inAppNotifications?: unknown; profileVisibility?: unknown };
+    let body: { emailNotifications?: unknown; inAppNotifications?: unknown; profileVisibility?: unknown; emailVisibility?: unknown; companyInfoVisibility?: unknown };
     try {
         body = await request.json() as typeof body;
     } catch {
         return jsonNoStore({ error: "Settings data is invalid." }, { status: 400 });
     }
-    if (typeof body.emailNotifications !== "boolean" || typeof body.inAppNotifications !== "boolean" || !["public", "private"].includes(String(body.profileVisibility))) {
+    if (
+        typeof body.emailNotifications !== "boolean"
+        || typeof body.inAppNotifications !== "boolean"
+        || !["public", "private"].includes(String(body.profileVisibility))
+        || typeof body.emailVisibility !== "boolean"
+        || typeof body.companyInfoVisibility !== "boolean"
+    ) {
         return jsonNoStore({ error: "Choose valid notification and profile visibility settings." }, { status: 400 });
     }
 
@@ -43,7 +55,13 @@ export async function PUT(request: Request) {
         await connectToDatabase();
         const preferences = await UserPreference.findOneAndUpdate(
             { user: user.userId },
-            { $set: { emailNotifications: body.emailNotifications, inAppNotifications: body.inAppNotifications, profileVisibility: body.profileVisibility } },
+            { $set: {
+                emailNotifications: body.emailNotifications,
+                inAppNotifications: body.inAppNotifications,
+                profileVisibility: body.profileVisibility,
+                emailVisibility: body.emailVisibility,
+                companyInfoVisibility: body.companyInfoVisibility,
+            } },
             { returnDocument: "after", upsert: true, runValidators: true, setDefaultsOnInsert: true },
         ).lean();
         return jsonNoStore({ preferences });

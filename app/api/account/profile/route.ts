@@ -88,7 +88,7 @@ export async function PATCH(request: Request) {
     }
 
     const profileFields = currentUser.role === "employer"
-        ? ["accountType", "companyName", "industry", "companyWebsite", "companySize", "position", "occupation", "hiringCategories", "hiringFrequency", "hiringPurpose"]
+        ? ["accountType", "companyName", "industry", "companyDescription", "companyWebsite", "companySize", "position", "occupation", "hiringCategories", "hiringFrequency", "hiringPurpose"]
         : currentUser.role === "freelancer"
             ? ["professionalTitle", "category", "skills", "experienceLevel", "bio", "workType", "availability", "hourlyRate", "portfolioUrl", "githubUrl", "linkedinUrl"]
             : [];

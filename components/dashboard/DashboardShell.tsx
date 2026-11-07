@@ -3,10 +3,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, BriefcaseBusiness, CheckCircle2, CreditCard, FileCheck, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, PlusCircle, Search, Settings, ShieldAlert, Star, Tags, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Bell, BookOpen, BriefcaseBusiness, CheckCircle2, CreditCard, FileCheck, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, PlusCircle, Search, Settings, ShieldAlert, Star, Tags, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { startGlobalNavigation } from "@/components/navigation/GlobalNavigationLoader";
 import { dashboardNotificationsUpdatedEvent, dashboardProfileImageUpdatedEvent } from "@/lib/dashboard-events";
+import { contextualHelpTopic } from "@/lib/contextual-help";
 
 export type DashboardRole = "freelancer" | "employer" | "admin";
 type NavigationItem = { label: string; href: string; icon: LucideIcon };
@@ -23,6 +24,7 @@ const navigation: Record<DashboardRole, NavigationItem[]> = {
         { label: "My Reviews", href: "/freelancer/dashboard/reviews", icon: Star },
         { label: "My Profile", href: "/freelancer/dashboard/profile", icon: UserRound },
         { label: "Settings", href: "/freelancer/dashboard/settings", icon: Settings },
+        { label: "Help Center", href: "/help", icon: BookOpen },
     ],
     employer: [
         { label: "Overview", href: "/client/dashboard", icon: LayoutDashboard },
@@ -38,6 +40,7 @@ const navigation: Record<DashboardRole, NavigationItem[]> = {
         { label: "Reviews", href: "/client/dashboard/reviews", icon: Star },
         { label: "My Profile", href: "/client/dashboard/profile", icon: UserRound },
         { label: "Settings", href: "/client/dashboard/settings", icon: Settings },
+        { label: "Help Center", href: "/help", icon: BookOpen },
     ],
     admin: [
         { label: "Overview", href: "/admin/dashboard", icon: LayoutDashboard },
@@ -54,6 +57,7 @@ const navigation: Record<DashboardRole, NavigationItem[]> = {
         { label: "Categories & Skills", href: "/admin/dashboard/categories", icon: Tags },
         { label: "Platform Settings", href: "/admin/dashboard/settings", icon: Settings },
         { label: "Activity Logs", href: "/admin/dashboard/activity-logs", icon: FileText },
+        { label: "Help Center", href: "/help", icon: BookOpen },
     ],
 };
 
@@ -215,7 +219,7 @@ export default function DashboardShell({ role, userName, userEmail, title, descr
         <aside className={`dashboard-sidebar${isSidebarOpen ? " is-open" : ""}`}>
             <div className="dashboard-brand"><Link className="logo" href="/"><span className="logo-mark" />FreelanceX</Link><button className="sidebar-close" onClick={() => setIsSidebarOpen(false)} aria-label="Close navigation" type="button">&times;</button></div>
             <div className="dashboard-role">{roleLabels[role]} workspace</div>
-            <nav className="dashboard-nav" aria-label={`${roleLabels[role]} dashboard navigation`}>{navigation[role].map((item) => { const Icon = item.icon; const active = pathname === item.href || (item.href !== `/${role === "employer" ? "client" : role}/dashboard` && pathname.startsWith(`${item.href}/`)); return <Link className={active ? "is-active" : ""} href={item.href} key={item.href} onClick={() => setIsSidebarOpen(false)}><Icon aria-hidden="true" size={18} strokeWidth={1.8} /><span>{item.label}</span></Link>; })}</nav>
+            <nav className="dashboard-nav" aria-label={`${roleLabels[role]} dashboard navigation`}>{navigation[role].map((item) => { const Icon = item.icon; const active = pathname === item.href || (item.href !== `/${role === "employer" ? "client" : role}/dashboard` && pathname.startsWith(`${item.href}/`)); return <Link className={active ? "is-active" : ""} data-onboarding-target={item.href} href={item.href} key={item.href} onClick={() => setIsSidebarOpen(false)}><Icon aria-hidden="true" size={18} strokeWidth={1.8} /><span>{item.label}</span></Link>; })}</nav>
         </aside>
         <div className="dashboard-main">
             <header className="dashboard-topbar">
@@ -247,7 +251,7 @@ export default function DashboardShell({ role, userName, userEmail, title, descr
                     </div>
                 </div>
             </header>
-            <main className="dashboard-content"><div className="dashboard-page-heading"><div><div className="eyebrow">{roleLabels[role]} dashboard</div><h1>{title}</h1><p>{description}</p></div></div>{children}</main>
+            <main className="dashboard-content"><div className="dashboard-page-heading"><div><div className="eyebrow">{roleLabels[role]} dashboard</div><h1>{title}</h1><p>{description}</p></div></div><div className="contextual-help"><BookOpen aria-hidden="true" size={17} /><span>Need help with this page?</span><Link href={`/help?topic=${contextualHelpTopic(pathname, role)}`}>How does this work?</Link></div>{children}</main>
         </div>
     </div>;
 }

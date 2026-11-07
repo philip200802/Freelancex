@@ -11,7 +11,14 @@ import ProjectSubmission from "@/models/ProjectSubmission";
 import UserPreference from "@/models/UserPreference";
 import Task from "@/models/Task";
 import User from "@/models/User";
-import { processWorkflowEmailOutbox, queueWorkflowEmail, queueWorkflowEmailToAdmins, queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
+import { queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
+import {
+    ApplicationTransactionError,
+    createProjectApplication,
+    DuplicateProjectApplicationError,
+    isTemporaryApplicationDatabaseError,
+    ProjectNotAcceptingApplicationsError,
+} from "@/lib/application-submission";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +83,7 @@ export async function GET(_request: Request, context: { params: Promise<{ taskId
                 currency: successfulPayment.currency,
                 verifiedAt: successfulPayment.verifiedAt,
             } : null,
-            employer: employer ? { name: task.employerNameSnapshot || employer.name } : task.employerNameSnapshot ? { name: task.employerNameSnapshot } : null,
+            employer: employer ? { id: task.employer?.toString() || null, name: task.employerNameSnapshot || employer.name } : task.employerNameSnapshot ? { id: null, name: task.employerNameSnapshot } : null,
             freelancer: freelancer ? { name: task.freelancerNameSnapshot || freelancer.name } : task.freelancerNameSnapshot ? { name: task.freelancerNameSnapshot } : null,
         };
         return jsonNoStore({
@@ -109,58 +116,80 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
         const message = typeof body.message === "string" ? body.message.trim() : "";
         if (message.length > 5000) return jsonNoStore({ error: "Application message must be 5000 characters or fewer." }, { status: 400 });
 
+        const databaseReadStartedAt = performance.now();
         await connectToDatabase();
         const existingTask = await Task.findById(taskId).select("employer freelancer status title isDeleted").lean();
         if (!existingTask) {
             return jsonNoStore({ error: "Project not found." }, { status: 404 });
         }
-        if (existingTask.employer.toString() === currentUser.userId) {
+        if (existingTask.employer?.toString() === currentUser.userId) {
             return jsonNoStore({ error: "You cannot apply to your own project." }, { status: 403 });
         }
-        if (existingTask.isDeleted || existingTask.status !== "open" || existingTask.freelancer) {
+        if (existingTask.isDeleted || existingTask.status !== "open") {
             return jsonNoStore({ error: "This project is no longer accepting applications." }, { status: 409 });
         }
+        const existingApplication = await Application.findOne({ task: taskId, freelancer: currentUser.userId }).select("_id").lean();
+        console.info("Project application eligibility lookup completed.", {
+            durationMs: Math.round(performance.now() - databaseReadStartedAt),
+            existingApplication: !!existingApplication,
+        });
+        if (existingApplication) return jsonNoStore({ error: "You have already applied to this project." }, { status: 409 });
 
-        const session = await mongoose.startSession();
-        let applicationId = "";
-        const workflowEmailIds: mongoose.Types.ObjectId[] = [];
+        const transactionStartedAt = performance.now();
+        let applicationId: string;
         try {
-            await session.withTransaction(async () => {
-                const claimedOpenJob = await Task.findOneAndUpdate(
-                    { _id: taskId, status: "open", isDeleted: { $ne: true }, employer: { $ne: currentUser.userId }, $or: [{ freelancer: { $exists: false } }, { freelancer: null }] },
-                    { $inc: { applicationCount: 1 } },
-                    { returnDocument: "after", session },
-                );
-                if (!claimedOpenJob) throw new Error("JOB_NOT_AVAILABLE");
+            const result = await createProjectApplication({
+                taskId,
+                employerId: existingTask.employer,
+                freelancerId: currentUser.userId,
+                message,
+            });
+            applicationId = result.applicationId.toString();
+        } catch (error) {
+            if (error instanceof ProjectNotAcceptingApplicationsError) {
+                return jsonNoStore({ error: "This project is no longer accepting applications." }, { status: 409 });
+            }
+            if (error instanceof DuplicateProjectApplicationError) {
+                return jsonNoStore({ error: "You have already applied to this project." }, { status: 409 });
+            }
+            if (error instanceof ApplicationTransactionError) {
+                return jsonNoStore({ error: error.message }, { status: 503 });
+            }
+            throw error;
+        }
+        console.info("Project application database write completed.", {
+            durationMs: Math.round(performance.now() - transactionStartedAt),
+            outcome: "created",
+        });
 
-                const [application] = await Application.create([{
-                    task: taskId,
-                    employer: existingTask.employer,
-                    freelancer: currentUser.userId,
-                    message,
-                    status: "pending",
-                }], { session });
-                applicationId = application.id;
-
-                let conversation = await Conversation.findOne({
-                    task: taskId,
-                    participants: { $all: [existingTask.employer, currentUser.userId], $size: 2 },
-                }).session(session).lean();
-                if (!conversation) {
-                    try {
-                        [conversation] = await Conversation.create([{ task: taskId, participants: [existingTask.employer, currentUser.userId] }], { session });
-                    } catch (conversationError) {
-                        const duplicateError = conversationError as { code?: number };
-                        if (duplicateError.code !== 11000) throw conversationError;
-                        conversation = await Conversation.findOne({
-                            task: taskId,
-                            participants: { $all: [existingTask.employer, currentUser.userId], $size: 2 },
-                        }).session(session).lean();
-                    }
+        const applicationObjectId = new mongoose.Types.ObjectId(applicationId);
+        const sideEffectStartedAt = performance.now();
+        try {
+            let conversation = await Conversation.findOne({
+                task: taskId,
+                participants: { $all: [existingTask.employer, currentUser.userId], $size: 2 },
+            }).lean();
+            if (!conversation) {
+                try {
+                    [conversation] = await Conversation.create([{
+                        task: taskId,
+                        participants: [existingTask.employer, currentUser.userId],
+                    }]);
+                } catch (conversationError) {
+                    const duplicateError = conversationError as { code?: number };
+                    if (duplicateError.code !== 11000) throw conversationError;
+                    conversation = await Conversation.findOne({
+                        task: taskId,
+                        participants: { $all: [existingTask.employer, currentUser.userId], $size: 2 },
+                    }).lean();
                 }
-                const notificationPreference = await UserPreference.findOne({ user: existingTask.employer }).select("inAppNotifications").session(session).lean();
-                if (notificationPreference?.inAppNotifications !== false) {
-                    await Notification.create([{
+            }
+
+            const notificationPreference = await UserPreference.findOne({ user: existingTask.employer }).select("inAppNotifications").lean();
+            if (notificationPreference?.inAppNotifications !== false) {
+                await Notification.updateOne(
+                    { recipient: existingTask.employer, eventKey: `application:${applicationId}:created` },
+                    { $setOnInsert: {
                         recipient: existingTask.employer,
                         recipientRole: "employer",
                         actor: currentUser.userId,
@@ -168,42 +197,44 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
                         title: "New job application",
                         body: "A freelancer applied to one of your jobs.",
                         relatedTask: taskId,
-                        relatedApplication: application._id,
-                        eventKey: `application:${application._id}:created`,
+                        relatedApplication: applicationObjectId,
+                        eventKey: `application:${applicationId}:created`,
                         href: "/client/dashboard/applications",
-                    }], { session });
-                }
-
-                const [client, freelancer] = await Promise.all([
-                    User.findById(existingTask.employer).select("name email isVerified").session(session).lean(),
-                    User.findById(currentUser.userId).select("name email isVerified").session(session).lean(),
-                ]);
-                const applicationDetails = [
-                    { label: "Freelancer", value: freelancer?.name || "Freelancer" },
-                    { label: "Project", value: existingTask.title },
-                    { label: "Application ID", value: application._id.toString() },
-                ];
-                const email = {
-                    subject: "A freelancer has applied to your project",
-                    heading: "New project application",
-                    message: "A freelancer applied to your project. Review the application in your dashboard.",
-                    details: applicationDetails,
-                    actionPath: "/client/dashboard/applications",
-                    actionLabel: "Review application",
-                    relatedTask: application.task,
-                };
-                const clientEmailId = await queueWorkflowEmail(
-                    "freelancer_applied",
-                    `application:${application._id}:client`,
-                    client,
-                    email,
-                    session,
+                    } },
+                    { upsert: true },
                 );
-                if (clientEmailId) workflowEmailIds.push(clientEmailId);
-                const adminEmailIds = await queueWorkflowEmailToAdmins(
-                    "freelancer_applied_admin",
-                    `application:${application._id}:admin`,
-                    {
+            }
+
+            const [client, freelancer] = await Promise.all([
+                User.findById(existingTask.employer).select("name email isVerified").lean(),
+                User.findById(currentUser.userId).select("name email isVerified").lean(),
+            ]);
+            const applicationDetails = [
+                { label: "Freelancer", value: freelancer?.name || "Freelancer" },
+                { label: "Project", value: existingTask.title },
+                { label: "Application ID", value: applicationId },
+            ];
+            const email = {
+                subject: "A freelancer has applied to your project",
+                heading: "New project application",
+                message: "A freelancer applied to your project. Review the application in your dashboard.",
+                details: applicationDetails,
+                actionPath: "/client/dashboard/applications",
+                actionLabel: "Review application",
+                relatedTask: new mongoose.Types.ObjectId(taskId),
+            };
+            await queueWorkflowEmailsAfterCommit([
+                {
+                    workflowEvent: "freelancer_applied",
+                    dedupeKey: `application:${applicationId}:client`,
+                    recipient: client,
+                    email,
+                },
+                {
+                    workflowEvent: "freelancer_applied_admin",
+                    dedupeKey: `application:${applicationId}:admin`,
+                    toAdmins: true,
+                    email: {
                         ...email,
                         subject: "New freelancer application",
                         heading: "Project application received",
@@ -211,29 +242,31 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
                         actionPath: `/admin/dashboard/jobs/${taskId}`,
                         actionLabel: "Review project activity",
                     },
-                    session,
-                );
-                workflowEmailIds.push(...adminEmailIds);
+                },
+            ], { dispatch: false });
+            console.info("Project application side effects completed.", {
+                durationMs: Math.round(performance.now() - sideEffectStartedAt),
             });
-        } catch (error) {
-            if (error instanceof Error && error.message === "JOB_NOT_AVAILABLE") {
-                return jsonNoStore({ error: "This project is no longer accepting applications." }, { status: 409 });
-            }
-            throw error;
-        } finally {
-            await session.endSession();
-        }
-        try {
-            await processWorkflowEmailOutbox(workflowEmailIds.length, workflowEmailIds);
-        } catch (emailError) {
-            console.error("Application emails could not be dispatched.", {
-                errorName: emailError instanceof Error ? emailError.name : "UnknownError",
+        } catch (sideEffectError) {
+            console.error("Project application was saved, but some notifications could not be queued.", {
+                errorName: sideEffectError instanceof Error ? sideEffectError.name : "UnknownError",
             });
         }
         return jsonNoStore({ application: { id: applicationId, status: "pending" }, applicationStatus: "pending" }, { status: 201 });
     } catch (error) {
+        if (isTemporaryApplicationDatabaseError(error)) {
+            console.error("Temporary database failure while creating project application.", {
+                errorName: error instanceof Error ? error.name : "UnknownError",
+            });
+            return jsonNoStore({ error: "Project applications are temporarily unavailable. Please try again." }, { status: 503 });
+        }
         if (error && typeof error === "object" && "code" in error && error.code === 11000) {
-            return jsonNoStore({ error: "You have already applied to this project." }, { status: 409 });
+            const existingApplication = await Application.findOne({ task: taskId, freelancer: currentUser.userId }).select("_id").lean();
+            if (existingApplication) return jsonNoStore({ error: "You have already applied to this project." }, { status: 409 });
+            console.error("Application insert hit an unexpected unique index.", {
+                keyPattern: "keyPattern" in error ? error.keyPattern : undefined,
+            });
+            return jsonNoStore({ error: "Project applications are temporarily unavailable. Please try again later." }, { status: 503 });
         }
         console.error("Task application error:", error);
         return jsonNoStore({ error: "Application is temporarily unavailable." }, { status: 500 });

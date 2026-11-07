@@ -65,10 +65,16 @@ export async function GET(request: Request) {
         ]);
         return jsonNoStore({
             tasks: tasks.map((task) => ({
-                ...task,
+                _id: task._id,
+                title: task.title,
+                description: task.description,
+                amount: task.amount,
+                category: task.category,
+                status: task.status,
+                createdAt: task.createdAt,
                 employer: task.employer
-                    ? { ...task.employer, name: task.employerNameSnapshot || task.employer.name }
-                    : task.employerNameSnapshot ? { name: task.employerNameSnapshot } : null,
+                    ? { id: task.employer._id.toString(), name: task.employerNameSnapshot || task.employer.name }
+                    : task.employerNameSnapshot ? { id: null, name: task.employerNameSnapshot } : null,
             })),
             pagination: { page, pageSize, totalCount, totalPages: Math.ceil(totalCount / pageSize) },
         });
@@ -142,12 +148,7 @@ export async function POST(request: Request) {
         }
 
         try {
-            const [client, freelancers] = await Promise.all([
-                User.findById(currentUser.userId).select("name email isVerified").lean(),
-                User.find({ role: "freelancer", isVerified: true, isActive: true })
-                    .select("name email isVerified")
-                    .lean(),
-            ]);
+            const client = await User.findById(currentUser.userId).select("name email isVerified").lean();
             const budget = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(task.amount);
             const workflowEmails: WorkflowEmailQueueItem[] = [{
                 workflowEvent: "job_created_client",
@@ -168,29 +169,9 @@ export async function POST(request: Request) {
                 actionLabel: "View job",
                 },
             }];
-            for (const freelancer of freelancers) {
-                workflowEmails.push({
-                    workflowEvent: "new_job_alert",
-                    dedupeKey: `task:${task._id}:job-alert`,
-                    recipient: freelancer,
-                    email: {
-                        subject: `New project opportunity: ${task.title}`,
-                        heading: "A new project is available",
-                        message: "A new project has been posted that may interest you.",
-                        details: [
-                            { label: "Job title", value: task.title },
-                            { label: "Description", value: task.description },
-                            { label: "Budget", value: budget },
-                            { label: "Category", value: task.category },
-                        ],
-                        actionPath: `/freelancer/dashboard/jobs/${task._id}`,
-                        actionLabel: "View project",
-                    },
-                });
-            }
             await queueWorkflowEmailsAfterCommit(workflowEmails);
         } catch (mailError) {
-            console.error("Job emails could not be queued after project creation.", {
+            console.error("Client job confirmation email could not be queued after project creation.", {
                 errorName: mailError instanceof Error ? mailError.name : "UnknownError",
             });
         }

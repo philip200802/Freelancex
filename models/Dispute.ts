@@ -3,11 +3,16 @@ import type { UserRole } from "@/models/User";
 
 export const disputeStatuses = [
     "open",
+    "awaiting_administrator_review",
     "under_review",
     "awaiting_client_response",
     "awaiting_freelancer_response",
+    "awaiting_additional_evidence",
+    "resolution_proposed",
     "resolved",
     "closed",
+    "escalated",
+    "reopened",
 ] as const;
 export type DisputeStatus = typeof disputeStatuses[number];
 

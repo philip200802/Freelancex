@@ -2,6 +2,16 @@ import mongoose, { Document, Schema } from "mongoose";
 
 export type UserRole = "employer" | "freelancer" | "admin";
 
+export interface IUserOnboarding {
+    version: number;
+    completedSteps: string[];
+    currentStep: string;
+    dismissed: boolean;
+    welcomeDismissed: boolean;
+    completed: boolean;
+    tutorialsCompleted: string[];
+}
+
 export interface IUser extends Document {
     name: string;
     firstName: string;
@@ -34,10 +44,21 @@ export interface IUser extends Document {
     payoutAccountVerifiedAt?: Date;
     rating?: number;
     reviewCount?: number;
+    onboarding: IUserOnboarding;
     adminRemovalGuard: number;
     createdAt: Date;
     updatedAt: Date;
 }
+
+const OnboardingSchema = new Schema<IUserOnboarding>({
+    version: { type: Number, default: 1 },
+    completedSteps: { type: [String], default: [] },
+    currentStep: { type: String, default: "" },
+    dismissed: { type: Boolean, default: false },
+    welcomeDismissed: { type: Boolean, default: false },
+    completed: { type: Boolean, default: false },
+    tutorialsCompleted: { type: [String], default: [] },
+}, { _id: false });
 
 const UserSchema = new Schema<IUser>({
     name: { type: String, required: true, trim: true },
@@ -71,7 +92,13 @@ const UserSchema = new Schema<IUser>({
     payoutAccountVerifiedAt: { type: Date, select: false },
     rating: { type: Number, min: 0, max: 5, default: 0 },
     reviewCount: { type: Number, min: 0, default: 0 },
+    onboarding: { type: OnboardingSchema, default: () => ({}) },
     adminRemovalGuard: { type: Number, min: 0, default: 0, select: false },
 }, { timestamps: true });
+
+const existingUserModel = mongoose.models.User;
+if (existingUserModel && !existingUserModel.schema.path("onboarding")) {
+    existingUserModel.schema.add({ onboarding: { type: OnboardingSchema, default: () => ({}) } });
+}
 
 export default mongoose.models.User || mongoose.model<IUser>("User", UserSchema);

@@ -11,7 +11,17 @@ import Notification from "@/models/Notification";
 import { processWorkflowEmailOutbox, queueWorkflowEmail, queueWorkflowEmailToAdmins } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
-const activeStatuses = ["open", "under_review", "awaiting_client_response", "awaiting_freelancer_response"];
+const activeStatuses = [
+    "open",
+    "awaiting_administrator_review",
+    "under_review",
+    "awaiting_client_response",
+    "awaiting_freelancer_response",
+    "awaiting_additional_evidence",
+    "resolution_proposed",
+    "escalated",
+    "reopened",
+];
 const eligibleProjectStatuses = ["funded", "in_progress", "submitted", "revision_requested", "completed"];
 const reasonLabels: Record<DisputeReason, string> = {
     work_quality: "Work quality",

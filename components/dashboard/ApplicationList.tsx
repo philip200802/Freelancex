@@ -8,8 +8,8 @@ type DashboardApplication = {
     _id?: string;
     id?: string;
     task: { _id?: string; id?: string; title: string; category: string; amount: number; status: string } | null;
-    employer?: { name?: string };
-    freelancer?: { name?: string; email?: string };
+    employer?: { id?: string | null; name?: string };
+    freelancer?: { id?: string | null; name?: string };
     message: string;
     status: "pending" | "accepted" | "rejected";
     legacy?: boolean;
@@ -101,11 +101,13 @@ export default function ApplicationList({ role, statusFilter }: { role: "employe
             const task = application.task;
             const taskId = task?._id || task?.id;
             const applicationId = application._id || application.id || `${taskId || "removed-project"}-${application.freelancer?.name}`;
-            const participantName = role === "employer" ? application.freelancer?.name : application.employer?.name;
+            const participant = role === "employer" ? application.freelancer : application.employer;
+            const participantName = participant?.name;
             return <article className="dashboard-list-row" key={applicationId}>
                 <div>
                     <strong>{task?.title || "Project no longer available"}</strong>
                     <span>{participantName || task?.category || "Project"}{task ? ` · ${money.format(task.amount)}` : ""}</span>
+                    {participant?.id && <Link className="text-link" href={`/profiles/${participant.id}`}>{role === "employer" ? "View freelancer profile" : "View client profile"}</Link>}
                     {application.message && <p>{application.message}</p>}
                     {taskId && <Link className="text-link" href={role === "freelancer" ? `/freelancer/dashboard/jobs/${taskId}` : `/client/dashboard/projects/${taskId}`}>View job</Link>}
                 </div>

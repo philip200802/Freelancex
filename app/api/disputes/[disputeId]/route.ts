@@ -11,7 +11,17 @@ import type { NotificationType } from "@/models/Notification";
 import { processWorkflowEmailOutbox, queueWorkflowEmail, queueWorkflowEmailToAdmins } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
-const activeStatuses = ["open", "under_review", "awaiting_client_response", "awaiting_freelancer_response"];
+const activeStatuses = [
+    "open",
+    "awaiting_administrator_review",
+    "under_review",
+    "awaiting_client_response",
+    "awaiting_freelancer_response",
+    "awaiting_additional_evidence",
+    "resolution_proposed",
+    "escalated",
+    "reopened",
+];
 
 function jsonNoStore(body: unknown, init?: ResponseInit) {
     const response = NextResponse.json(body, init);
@@ -118,8 +128,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ dispu
     if (message.length > 5000 || resolution.length > 5000) return jsonNoStore({ error: "Dispute messages must be 5000 characters or fewer." }, { status: 400 });
     if (user.role !== "admin" && action !== "reply") return jsonNoStore({ error: "Only administrators can change dispute status or resolution." }, { status: 403 });
     if (action === "reply" && !message) return jsonNoStore({ error: "Write a response before submitting." }, { status: 400 });
-    if (action === "request_response" && (!message || (body.status !== "awaiting_client_response" && body.status !== "awaiting_freelancer_response"))) {
-        return jsonNoStore({ error: "Choose which party should respond and include a message." }, { status: 400 });
+    if (action === "request_response" && (!message || !["awaiting_client_response", "awaiting_freelancer_response", "awaiting_additional_evidence"].includes(String(body.status)))) {
+        return jsonNoStore({ error: "Choose which party should respond or request additional evidence, then include a message." }, { status: 400 });
     }
     if (action === "set_status" && (typeof body.status !== "string" || !disputeStatuses.includes(body.status as DisputeStatus))) {
         return jsonNoStore({ error: "Choose a valid dispute status." }, { status: 400 });
@@ -144,8 +154,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ dispu
         if (user.role === "admin" && dispute.status === "closed") {
             return jsonNoStore({ error: "This dispute is closed and cannot be changed." }, { status: 409 });
         }
-        if (user.role === "admin" && dispute.status === "resolved" && action !== "close") {
-            return jsonNoStore({ error: "This dispute is resolved. Close it to finish the record." }, { status: 409 });
+        const isReopeningResolvedDispute = user.role === "admin" && action === "set_status" && body.status === "reopened" && dispute.status === "resolved";
+        if (user.role === "admin" && dispute.status === "resolved" && !isReopeningResolvedDispute && action !== "close") {
+            return jsonNoStore({ error: "This dispute is resolved. Close it to finish the record or reopen it explicitly." }, { status: 409 });
         }
         if (action === "reply" && dispute.status === "awaiting_client_response" && !isClient && user.role !== "admin") {
             return jsonNoStore({ error: "The administrator requested a response from the client." }, { status: 409 });
@@ -206,6 +217,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ dispu
         }
 
         const shouldRestoreTask = nextStatus === "resolved" || (nextStatus === "closed" && dispute.status !== "resolved");
+        const shouldGuardDisputedProject = nextStatus === "reopened";
         if (shouldRestoreTask) {
             operation = "restore project status";
             const restoredTask = await Task.updateOne(
@@ -229,6 +241,27 @@ export async function PATCH(request: Request, context: { params: Promise<{ dispu
                     return jsonNoStore({ error: "The dispute update could not be completed safely. Contact support." }, { status: 503 });
                 }
                 return jsonNoStore({ error: "The project changed while the dispute was being updated. Refresh and try again." }, { status: 409 });
+            }
+        } else if (shouldGuardDisputedProject) {
+            operation = "reopen disputed project";
+            const reopenedTask = await Task.updateOne(
+                { _id: dispute.task, status: { $in: [dispute.projectStatusBeforeDispute, "completed", "submitted", "in_progress", "revision_requested", "funded"] } },
+                { $set: { status: "disputed" } },
+            );
+            if (reopenedTask.matchedCount !== 1) {
+                operation = "roll back dispute after reopen conflict";
+                const rollback = await Dispute.updateOne(
+                    { _id: disputeId, status: nextStatus, "history.entryId": requestId },
+                    {
+                        $set: { status: dispute.status },
+                        $pull: { history: { entryId: requestId } },
+                    },
+                );
+                if (rollback.modifiedCount !== 1) {
+                    console.error("Dispute reopening rollback failed.", diagnosticDetails(new Error("Dispute was reopened, but the project state conflicted."), operation));
+                    return jsonNoStore({ error: "The dispute update could not be completed safely. Contact support." }, { status: 503 });
+                }
+                return jsonNoStore({ error: "The project changed while the dispute was being reopened. Refresh and try again." }, { status: 409 });
             }
         }
 

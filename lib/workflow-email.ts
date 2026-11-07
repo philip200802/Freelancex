@@ -18,9 +18,10 @@ export type WorkflowEmail = {
 export type WorkflowEmailQueueItem = {
     workflowEvent: string;
     dedupeKey: string;
-    recipient: WorkflowRecipient | null | undefined;
+    recipient?: WorkflowRecipient | null;
     email: WorkflowEmail;
     allowUnverified?: boolean;
+    toAdmins?: boolean;
 };
 
 function emailActionUrl(path: string) {
@@ -213,7 +214,7 @@ export async function processWorkflowEmailOutbox(limit = 50, outboxIds?: mongoos
     return { sent, queued };
 }
 
-export async function queueWorkflowEmailsAfterCommit(items: WorkflowEmailQueueItem[]) {
+export async function queueWorkflowEmailsAfterCommit(items: WorkflowEmailQueueItem[], { dispatch = true }: { dispatch?: boolean } = {}) {
     if (!items.length) return { sent: 0, queued: 0 };
 
     const session = await mongoose.startSession();
@@ -222,21 +223,31 @@ export async function queueWorkflowEmailsAfterCommit(items: WorkflowEmailQueueIt
         await session.withTransaction(async () => {
             outboxIds.length = 0;
             for (const item of items) {
-                const outboxId = await queueWorkflowEmail(
-                    item.workflowEvent,
-                    item.dedupeKey,
-                    item.recipient,
-                    item.email,
-                    session,
-                    item.allowUnverified,
-                );
-                if (outboxId) outboxIds.push(outboxId);
+                if (item.toAdmins) {
+                    outboxIds.push(...await queueWorkflowEmailToAdmins(
+                        item.workflowEvent,
+                        item.dedupeKey,
+                        item.email,
+                        session,
+                    ));
+                } else {
+                    const outboxId = await queueWorkflowEmail(
+                        item.workflowEvent,
+                        item.dedupeKey,
+                        item.recipient,
+                        item.email,
+                        session,
+                        item.allowUnverified,
+                    );
+                    if (outboxId) outboxIds.push(outboxId);
+                }
             }
         });
     } finally {
         await session.endSession();
     }
 
+    if (!dispatch) return { sent: 0, queued: outboxIds.length };
     return outboxIds.length ? processWorkflowEmailOutbox(outboxIds.length, outboxIds) : { sent: 0, queued: 0 };
 }
 

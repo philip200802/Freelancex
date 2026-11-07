@@ -19,7 +19,7 @@ type AccountUser = {
     updatedAt: string;
 };
 type AccountProfile = { user: AccountUser; profile: Record<string, unknown> | null };
-type Preferences = { emailNotifications: boolean; inAppNotifications: boolean; profileVisibility: "public" | "private" };
+type Preferences = { emailNotifications: boolean; inAppNotifications: boolean; profileVisibility: "public" | "private"; emailVisibility: boolean; companyInfoVisibility: boolean };
 type PaystackBankOption = { name: string; code: string };
 type PayoutBankDetails = {
     bankCode: string;
@@ -103,7 +103,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
     const [savedProfile, setSavedProfile] = useState<AccountProfile | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [loadAttempt, setLoadAttempt] = useState(0);
-    const [preferences, setPreferences] = useState<Preferences>({ emailNotifications: true, inAppNotifications: true, profileVisibility: "public" });
+    const [preferences, setPreferences] = useState<Preferences>({ emailNotifications: true, inAppNotifications: true, profileVisibility: "public", emailVisibility: false, companyInfoVisibility: true });
     const [state, setState] = useState<"loading" | "ready" | "error">("loading");
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
@@ -305,7 +305,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
                         }
                     }
                 } else {
-                    for (const field of ["accountType", "companyName", "industry", "companyWebsite", "companySize", "position", "hiringFrequency", "hiringPurpose"] as const) {
+                    for (const field of ["accountType", "companyName", "industry", "companyDescription", "companyWebsite", "companySize", "position", "hiringFrequency", "hiringPurpose"] as const) {
                         profileData[field] = typeof currentProfile[field] === "string" ? currentProfile[field] : "";
                     }
                 }
@@ -565,6 +565,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
                             <div><dt>Account type</dt><dd>{profileText(clientProfile, "accountType") || "Not provided"}</dd></div>
                             <div><dt>Company name</dt><dd>{profileText(clientProfile, "companyName") || "Not provided"}</dd></div>
                             <div><dt>Industry</dt><dd>{profileText(clientProfile, "industry") || "Not provided"}</dd></div>
+                            <div><dt>Business description</dt><dd>{profileText(clientProfile, "companyDescription") || "Not provided"}</dd></div>
                             <div><dt>Company website</dt><dd>{companyWebsite ? <a href={companyWebsite} rel="noreferrer" target="_blank">{profileText(clientProfile, "companyWebsite")}</a> : "Not provided"}</dd></div>
                             <div><dt>Company size</dt><dd>{companySize ? `${companySize} employees` : "Not provided"}</dd></div>
                             <div><dt>Position</dt><dd>{profileText(clientProfile, "position") || "Not provided"}</dd></div>
@@ -613,6 +614,7 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
                     <label>Company website<input className="filter-input" maxLength={500} placeholder="https://" type="url" value={profileText(clientProfile, "companyWebsite")} onChange={(event) => updateProfessionalProfile("companyWebsite", event.target.value)} /></label>
                     <label>Company size<input className="filter-input" max={1_000_000_000} min={1} step={1} type="number" value={companySize} onChange={(event) => updateProfessionalProfile("companySize", event.target.value)} /></label>
                 </div>
+                <label>Business description<textarea className="filter-input dashboard-textarea" maxLength={5000} value={profileText(clientProfile, "companyDescription")} onChange={(event) => updateProfessionalProfile("companyDescription", event.target.value)} /></label>
                 <div className="dashboard-form-row">
                     <label>Position<input className="filter-input" maxLength={500} value={profileText(clientProfile, "position")} onChange={(event) => updateProfessionalProfile("position", event.target.value)} /></label>
                     <label>Hiring frequency<select className="filter-input" required value={profileText(clientProfile, "hiringFrequency")} onChange={(event) => updateProfessionalProfile("hiringFrequency", event.target.value)}><option value="">Select hiring frequency</option><option>Occasionally</option><option>Monthly</option><option>Frequently</option><option>For ongoing projects</option></select></label>
@@ -641,6 +643,8 @@ export default function AccountPanel({ section, role }: { section: "profile" | "
             <label><input checked={preferences.emailNotifications} type="checkbox" onChange={(event) => setPreferences({ ...preferences, emailNotifications: event.target.checked })} /> Email notifications</label>
             <label><input checked={preferences.inAppNotifications} type="checkbox" onChange={(event) => setPreferences({ ...preferences, inAppNotifications: event.target.checked })} /> In-app notifications</label>
             <label>Profile visibility<select className="filter-input" value={preferences.profileVisibility} onChange={(event) => setPreferences({ ...preferences, profileVisibility: event.target.value as Preferences["profileVisibility"] })}><option value="public">Public</option><option value="private">Private</option></select></label>
+            <label><input checked={preferences.emailVisibility} type="checkbox" onChange={(event) => setPreferences({ ...preferences, emailVisibility: event.target.checked })} /> Show my email on my public profile</label>
+            {role === "employer" && <label><input checked={preferences.companyInfoVisibility} type="checkbox" onChange={(event) => setPreferences({ ...preferences, companyInfoVisibility: event.target.checked })} /> Show my company information on my public profile</label>}
             {error && <p className="form-error" role="alert">{error}</p>}
             {success && <p className="success-message" role="status">{success}</p>}
             <button className="button button-primary" disabled={isSaving} type="submit">{isSaving ? "Saving..." : "Save Settings"}</button>

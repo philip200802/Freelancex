@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         const applicationsPromise = Application.find(filter)
             .populate("task", "title category amount status")
             .populate("employer", "name")
-            .populate("freelancer", "name email")
+            .populate("freelancer", "name")
             .sort({ createdAt: -1, _id: -1 })
             .limit(page * pageSize)
             .lean();
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
             ? Task.find(legacyFilter)
                 .select("title category amount employer freelancer employerNameSnapshot freelancerNameSnapshot status createdAt")
                 .populate("employer", "name")
-                .populate("freelancer", "name email")
+                .populate("freelancer", "name")
                 .sort({ createdAt: -1, _id: -1 })
                 .limit(page * pageSize)
                 .lean()
@@ -66,11 +66,11 @@ export async function GET(request: Request) {
             ...application,
             sortId: application._id.toString(),
             employer: application.employer
-                ? { ...application.employer, name: application.employerNameSnapshot || application.employer.name }
-                : application.employerNameSnapshot ? { name: application.employerNameSnapshot } : null,
+                ? { id: application.employer._id.toString(), name: application.employerNameSnapshot || application.employer.name }
+                : application.employerNameSnapshot ? { id: null, name: application.employerNameSnapshot } : null,
             freelancer: application.freelancer
-                ? { ...application.freelancer, name: application.freelancerNameSnapshot || application.freelancer.name }
-                : application.freelancerNameSnapshot ? { name: application.freelancerNameSnapshot } : null,
+                ? { id: application.freelancer._id.toString(), name: application.freelancerNameSnapshot || application.freelancer.name }
+                : application.freelancerNameSnapshot ? { id: null, name: application.freelancerNameSnapshot } : null,
         }));
         const combined = [
             ...applicationsWithSnapshots,
@@ -79,11 +79,11 @@ export async function GET(request: Request) {
                 sortId: task._id.toString(),
                 task: { id: task._id.toString(), title: task.title, category: task.category, amount: task.amount, status: task.status },
                 employer: task.employer
-                    ? { ...task.employer, name: task.employerNameSnapshot || task.employer.name }
-                    : task.employerNameSnapshot ? { name: task.employerNameSnapshot } : null,
+                    ? { id: task.employer._id.toString(), name: task.employerNameSnapshot || task.employer.name }
+                    : task.employerNameSnapshot ? { id: null, name: task.employerNameSnapshot } : null,
                 freelancer: task.freelancer
-                    ? { ...task.freelancer, name: task.freelancerNameSnapshot || task.freelancer.name }
-                    : task.freelancerNameSnapshot ? { name: task.freelancerNameSnapshot } : null,
+                    ? { id: task.freelancer._id.toString(), name: task.freelancerNameSnapshot || task.freelancer.name }
+                    : task.freelancerNameSnapshot ? { id: null, name: task.freelancerNameSnapshot } : null,
                 message: "",
                 status: "pending" as const,
                 createdAt: task.createdAt,
