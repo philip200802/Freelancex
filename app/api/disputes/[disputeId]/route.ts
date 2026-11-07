@@ -8,7 +8,7 @@ import Task from "@/models/Task";
 import User from "@/models/User";
 import Notification from "@/models/Notification";
 import type { NotificationType } from "@/models/Notification";
-import { sendWorkflowEmailSafely } from "@/lib/workflow-email";
+import { processWorkflowEmailOutbox, queueWorkflowEmail, queueWorkflowEmailToAdmins } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
 const activeStatuses = ["open", "under_review", "awaiting_client_response", "awaiting_freelancer_response"];
@@ -76,7 +76,7 @@ function serializeDispute(dispute: {
             entryId: entry.entryId,
             authorId: entry.author && typeof entry.author === "object" && "_id" in entry.author ? String(entry.author._id) : String(entry.author),
             authorRole: entry.authorRole,
-            authorName: entry.authorName || "",
+            authorName: entry.authorRole === "admin" ? "FreelanceX Support Team" : entry.authorName || "",
             message: entry.message,
             attachments: entry.attachments || [],
             readBy: (entry.readBy || []).map((reader) => String(reader)),
@@ -167,7 +167,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ dispu
             entryId: requestId || randomUUID(),
             author: user.userId,
             authorRole: user.role,
-            authorName: actor?.name || (user.role === "admin" ? "FreelanceX Support" : user.role === "employer" ? "Client" : "Freelancer"),
+            authorName: user.role === "admin" ? "FreelanceX Support Team" : actor?.name || (user.role === "employer" ? "Client" : "Freelancer"),
             message: entryMessage,
             attachments: evidenceLinks,
             readBy: [user.userId],
@@ -263,6 +263,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ dispu
                     { $setOnInsert: {
                         ...recipient,
                         actor: user.userId,
+                        ...(user.role === "admin" ? { actorNameSnapshot: "FreelanceX Support Team" } : {}),
                         type: recipient.recipientRole === "admin" ? "admin_dispute" : notificationType,
                         title: recipient.recipientRole === "admin" ? "Dispute requires attention" : action === "reply" ? "New dispute message" : nextStatus === "resolved" ? "Dispute resolved" : "Dispute updated",
                         body: updateNotice,
@@ -278,25 +279,68 @@ export async function PATCH(request: Request, context: { params: Promise<{ dispu
         }
 
         try {
-            const [client, freelancer] = await Promise.all([
-                User.findById(dispute.employer).select("name email isVerified").lean(),
-                User.findById(dispute.freelancer).select("name email isVerified").lean(),
-            ]);
+            const emailSession = await mongoose.connection.startSession();
+            const workflowEmailIds: mongoose.Types.ObjectId[] = [];
+            try {
+                await emailSession.withTransaction(async () => {
+                    const [client, freelancer] = await Promise.all([
+                        User.findById(dispute.employer).select("name email isVerified").session(emailSession).lean(),
+                        User.findById(dispute.freelancer).select("name email isVerified").session(emailSession).lean(),
+                    ]);
             const updateText = nextStatus === "resolved"
                 ? `The dispute has been resolved. ${resolution}`
                 : action === "request_response" ? message : `There is a new update on your project dispute. ${message}`;
-            const email = {
-                subject: action === "reply" ? "New message on your FreelanceX dispute." : nextStatus === "resolved" ? "FreelanceX dispute resolution recorded." : "FreelanceX dispute update.",
-                heading: action === "reply" ? "New dispute message" : nextStatus === "resolved" ? "Dispute resolution recorded" : "Project dispute update",
-                message: updateText,
-                details: [{ label: "Dispute status", value: nextStatus.replace(/_/g, " ") }, { label: "Project reference", value: dispute.task.toString() }],
-                actionPath: `/client/dashboard/disputes?disputeId=${dispute._id}`,
-                actionLabel: "View dispute",
-            };
-            const emails = [];
-            if (user.role !== "employer") emails.push(sendWorkflowEmailSafely(action === "reply" ? "dispute_message" : "dispute_updated", client, email));
-            if (user.role !== "freelancer") emails.push(sendWorkflowEmailSafely(action === "reply" ? "dispute_message" : "dispute_updated", freelancer, { ...email, actionPath: `/freelancer/dashboard/disputes?disputeId=${dispute._id}` }));
-            await Promise.all(emails);
+                    const event = action === "reply" ? "dispute_message" : nextStatus === "resolved" ? "dispute_resolved" : "dispute_updated";
+                    const email = {
+                        subject: action === "reply" ? "New message on your FreelanceX dispute" : nextStatus === "resolved" ? "FreelanceX dispute resolution recorded" : "FreelanceX dispute update",
+                        heading: action === "reply" ? "New dispute message" : nextStatus === "resolved" ? "Dispute resolution recorded" : "Project dispute update",
+                        message: user.role === "admin" ? `FreelanceX Support Team: ${updateText}` : updateText,
+                        details: [{ label: "Dispute status", value: nextStatus.replace(/_/g, " ") }, { label: "Project reference", value: dispute.task.toString() }],
+                        actionLabel: "View dispute",
+                        relatedTask: dispute.task,
+                    };
+                    if (user.role !== "employer") {
+                        const clientEmailId = await queueWorkflowEmail(
+                            event,
+                            `dispute:${dispute._id}:update:${requestId}:client`,
+                            client,
+                            { ...email, actionPath: `/client/dashboard/disputes?disputeId=${dispute._id}` },
+                            emailSession,
+                        );
+                        if (clientEmailId) workflowEmailIds.push(clientEmailId);
+                    }
+                    if (user.role !== "freelancer") {
+                        const freelancerEmailId = await queueWorkflowEmail(
+                            event,
+                            `dispute:${dispute._id}:update:${requestId}:freelancer`,
+                            freelancer,
+                            { ...email, actionPath: `/freelancer/dashboard/disputes?disputeId=${dispute._id}` },
+                            emailSession,
+                        );
+                        if (freelancerEmailId) workflowEmailIds.push(freelancerEmailId);
+                    }
+                    if (nextStatus === "resolved" || nextStatus === "under_review") {
+                        const adminEmailIds = await queueWorkflowEmailToAdmins(
+                            nextStatus === "resolved" ? "dispute_resolved_admin" : "dispute_escalated_admin",
+                            `dispute:${dispute._id}:status:${nextStatus}:${requestId}:admin`,
+                            {
+                                subject: nextStatus === "resolved" ? "Project dispute resolved" : "Project dispute escalated for review",
+                                heading: nextStatus === "resolved" ? "Dispute resolved" : "Dispute escalated",
+                                message: nextStatus === "resolved" ? "An administrator recorded a resolution for a project dispute." : "A project dispute was escalated for administrator review.",
+                                details: [{ label: "Project reference", value: dispute.task.toString() }, { label: "Dispute status", value: nextStatus.replace(/_/g, " ") }],
+                                actionPath: `/admin/dashboard/disputes#${dispute._id}`,
+                                actionLabel: "Review dispute",
+                                relatedTask: dispute.task,
+                            },
+                            emailSession,
+                        );
+                        workflowEmailIds.push(...adminEmailIds);
+                    }
+                });
+            } finally {
+                await emailSession.endSession();
+            }
+            await processWorkflowEmailOutbox(workflowEmailIds.length, workflowEmailIds);
         } catch (emailError) {
             console.error("Dispute update notification could not be prepared.", {
                 errorName: emailError instanceof Error ? emailError.name : "UnknownError",

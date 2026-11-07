@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, BriefcaseBusiness, CheckCircle2, CreditCard, FileCheck, FileText, LayoutDashboard, LogOut, MessageCircle, PlusCircle, Search, Settings, ShieldAlert, Star, Tags, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Bell, BriefcaseBusiness, CheckCircle2, CreditCard, FileCheck, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, PlusCircle, Search, Settings, ShieldAlert, Star, Tags, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { startGlobalNavigation } from "@/components/navigation/GlobalNavigationLoader";
 import { dashboardNotificationsUpdatedEvent, dashboardProfileImageUpdatedEvent } from "@/lib/dashboard-events";
@@ -11,7 +11,6 @@ import { dashboardNotificationsUpdatedEvent, dashboardProfileImageUpdatedEvent }
 export type DashboardRole = "freelancer" | "employer" | "admin";
 type NavigationItem = { label: string; href: string; icon: LucideIcon };
 type DashboardNotification = { _id?: string; id?: string; title: string; body: string; href?: string; readAt?: string | null; createdAt: string };
-
 const navigation: Record<DashboardRole, NavigationItem[]> = {
     freelancer: [
         { label: "Overview", href: "/freelancer/dashboard", icon: LayoutDashboard },
@@ -20,7 +19,6 @@ const navigation: Record<DashboardRole, NavigationItem[]> = {
         { label: "My Projects", href: "/freelancer/dashboard/contracts", icon: FileCheck },
         { label: "Disputes", href: "/freelancer/dashboard/disputes", icon: ShieldAlert },
         { label: "Messages", href: "/freelancer/dashboard/messages", icon: MessageCircle },
-        { label: "Notifications", href: "/freelancer/dashboard/notifications", icon: Bell },
         { label: "Earnings", href: "/freelancer/dashboard/earnings", icon: Wallet },
         { label: "My Reviews", href: "/freelancer/dashboard/reviews", icon: Star },
         { label: "My Profile", href: "/freelancer/dashboard/profile", icon: UserRound },
@@ -36,7 +34,6 @@ const navigation: Record<DashboardRole, NavigationItem[]> = {
         { label: "Disputes", href: "/client/dashboard/disputes", icon: ShieldAlert },
         { label: "Completed Projects", href: "/client/dashboard/completed", icon: CheckCircle2 },
         { label: "Messages", href: "/client/dashboard/messages", icon: MessageCircle },
-        { label: "Notifications", href: "/client/dashboard/notifications", icon: Bell },
         { label: "Payments", href: "/client/dashboard/payments", icon: CreditCard },
         { label: "Reviews", href: "/client/dashboard/reviews", icon: Star },
         { label: "My Profile", href: "/client/dashboard/profile", icon: UserRound },
@@ -45,21 +42,18 @@ const navigation: Record<DashboardRole, NavigationItem[]> = {
     admin: [
         { label: "Overview", href: "/admin/dashboard", icon: LayoutDashboard },
         { label: "Users", href: "/admin/dashboard/users", icon: Users },
-        { label: "Employers", href: "/admin/dashboard/employers", icon: Users },
-        { label: "Freelancers", href: "/admin/dashboard/freelancers", icon: Users },
         { label: "Jobs", href: "/admin/dashboard/jobs", icon: BriefcaseBusiness },
         { label: "Proposals", href: "/admin/dashboard/proposals", icon: FileText },
         { label: "Contracts", href: "/admin/dashboard/contracts", icon: FileCheck },
         { label: "Transactions", href: "/admin/dashboard/transactions", icon: Wallet },
         { label: "Bank Accounts", href: "/admin/dashboard/bank-accounts", icon: CreditCard },
         { label: "Freelancer Payouts", href: "/admin/dashboard/payouts", icon: Wallet },
-        { label: "Messages", href: "/admin/dashboard/messages", icon: MessageCircle },
+        { label: "Email Delivery", href: "/admin/dashboard/email-delivery", icon: Mail },
         { label: "Disputes & Reports", href: "/admin/dashboard/disputes", icon: ShieldAlert },
         { label: "Reviews", href: "/admin/dashboard/reviews", icon: Star },
         { label: "Categories & Skills", href: "/admin/dashboard/categories", icon: Tags },
         { label: "Platform Settings", href: "/admin/dashboard/settings", icon: Settings },
         { label: "Activity Logs", href: "/admin/dashboard/activity-logs", icon: FileText },
-        { label: "Notifications", href: "/admin/dashboard/notifications", icon: Bell },
     ],
 };
 

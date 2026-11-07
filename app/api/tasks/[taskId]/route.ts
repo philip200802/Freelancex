@@ -11,7 +11,7 @@ import ProjectSubmission from "@/models/ProjectSubmission";
 import UserPreference from "@/models/UserPreference";
 import Task from "@/models/Task";
 import User from "@/models/User";
-import { sendWorkflowEmailSafely } from "@/lib/workflow-email";
+import { processWorkflowEmailOutbox, queueWorkflowEmail, queueWorkflowEmailToAdmins, queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +123,7 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
 
         const session = await mongoose.startSession();
         let applicationId = "";
+        const workflowEmailIds: mongoose.Types.ObjectId[] = [];
         try {
             await session.withTransaction(async () => {
                 const claimedOpenJob = await Task.findOneAndUpdate(
@@ -172,6 +173,47 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
                         href: "/client/dashboard/applications",
                     }], { session });
                 }
+
+                const [client, freelancer] = await Promise.all([
+                    User.findById(existingTask.employer).select("name email isVerified").session(session).lean(),
+                    User.findById(currentUser.userId).select("name email isVerified").session(session).lean(),
+                ]);
+                const applicationDetails = [
+                    { label: "Freelancer", value: freelancer?.name || "Freelancer" },
+                    { label: "Project", value: existingTask.title },
+                    { label: "Application ID", value: application._id.toString() },
+                ];
+                const email = {
+                    subject: "A freelancer has applied to your project",
+                    heading: "New project application",
+                    message: "A freelancer applied to your project. Review the application in your dashboard.",
+                    details: applicationDetails,
+                    actionPath: "/client/dashboard/applications",
+                    actionLabel: "Review application",
+                    relatedTask: application.task,
+                };
+                const clientEmailId = await queueWorkflowEmail(
+                    "freelancer_applied",
+                    `application:${application._id}:client`,
+                    client,
+                    email,
+                    session,
+                );
+                if (clientEmailId) workflowEmailIds.push(clientEmailId);
+                const adminEmailIds = await queueWorkflowEmailToAdmins(
+                    "freelancer_applied_admin",
+                    `application:${application._id}:admin`,
+                    {
+                        ...email,
+                        subject: "New freelancer application",
+                        heading: "Project application received",
+                        message: "A freelancer has applied to a project. No action is required unless review is needed.",
+                        actionPath: `/admin/dashboard/jobs/${taskId}`,
+                        actionLabel: "Review project activity",
+                    },
+                    session,
+                );
+                workflowEmailIds.push(...adminEmailIds);
             });
         } catch (error) {
             if (error instanceof Error && error.message === "JOB_NOT_AVAILABLE") {
@@ -182,23 +224,9 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
             await session.endSession();
         }
         try {
-            const [client, freelancer] = await Promise.all([
-                User.findById(existingTask.employer).select("name email isVerified").lean(),
-                User.findById(currentUser.userId).select("name email isVerified").lean(),
-            ]);
-            await sendWorkflowEmailSafely("freelancer_applied", client, {
-                subject: "A freelancer has applied to your job on FreelanceX.",
-                heading: "New application for your job",
-                message: "A freelancer has applied to your job.",
-                details: [
-                    { label: "Freelancer", value: freelancer?.name || "Freelancer" },
-                    { label: "Job", value: existingTask.title },
-                ],
-                actionPath: "/client/dashboard/applications",
-                actionLabel: "Review applications",
-            });
+            await processWorkflowEmailOutbox(workflowEmailIds.length, workflowEmailIds);
         } catch (emailError) {
-            console.error("Application email notification could not be prepared.", {
+            console.error("Application emails could not be dispatched.", {
                 errorName: emailError instanceof Error ? emailError.name : "UnknownError",
             });
         }
@@ -367,21 +395,26 @@ export async function DELETE(_request: Request, context: { params: Promise<{ tas
         if (!deletion) return jsonNoStore({ error: "The job could not be deleted." }, { status: 409 });
         try {
             const client = await User.findById(user.userId).select("name email isVerified").lean();
-            await sendWorkflowEmailSafely("job_deleted_client", client, {
-                subject: "Your FreelanceX job posting was deleted.",
-                heading: deletion.archived ? "Job posting archived" : "Job posting deleted",
-                message: deletion.archived
-                    ? "The posting was removed from your active jobs and safely archived to preserve project or application history."
-                    : "The posting was deleted successfully.",
-                details: [
-                    { label: "Job title", value: deletion.title },
-                    { label: "Job reference", value: taskId },
-                    { label: "Deletion date", value: deletion.deletedAt.toLocaleString("en-NG", { timeZone: "UTC" }) + " UTC" },
-                    { label: "Deletion status", value: deletion.archived ? "Archived; history preserved" : "Deleted" },
-                ],
-                actionPath: "/client/dashboard/projects",
-                actionLabel: "View My Jobs",
-            });
+            await queueWorkflowEmailsAfterCommit([{
+                workflowEvent: "job_deleted_client",
+                dedupeKey: `task:${taskId}:deleted:client`,
+                recipient: client,
+                email: {
+                    subject: "Your FreelanceX job posting was deleted.",
+                    heading: deletion.archived ? "Job posting archived" : "Job posting deleted",
+                    message: deletion.archived
+                        ? "The posting was removed from your active jobs and safely archived to preserve project or application history."
+                        : "The posting was deleted successfully.",
+                    details: [
+                        { label: "Job title", value: deletion.title },
+                        { label: "Job reference", value: taskId },
+                        { label: "Deletion date", value: deletion.deletedAt.toLocaleString("en-NG", { timeZone: "UTC" }) + " UTC" },
+                        { label: "Deletion status", value: deletion.archived ? "Archived; history preserved" : "Deleted" },
+                    ],
+                    actionPath: "/client/dashboard/projects",
+                    actionLabel: "View My Jobs",
+                },
+            }]);
         } catch (mailError) {
             console.error("Job deletion confirmation email could not be prepared.", { errorName: mailError instanceof Error ? mailError.name : "UnknownError" });
         }

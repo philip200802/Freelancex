@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type SubmissionAttachment = {
@@ -27,9 +28,18 @@ type SubmissionResponse = {
     error?: string;
     message?: string;
     task?: { status: string };
+    payoutBreakdown?: {
+        grossAmountKobo: number;
+        commissionRatePercent: number;
+        commissionAmountKobo: number;
+        freelancerNetAmountKobo: number;
+    };
+    bankAccountVerified?: boolean;
 };
 
 type SubmissionRole = "freelancer" | "employer" | "admin";
+
+const money = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 2 });
 
 function statusLabel(status: Submission["status"]) {
     if (status === "revision_requested") return "Revision requested";
@@ -86,6 +96,9 @@ export default function ProjectSubmissions({
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [reviewFeedback, setReviewFeedback] = useState("");
+    const [commissionAcknowledged, setCommissionAcknowledged] = useState(false);
+    const [payoutBreakdown, setPayoutBreakdown] = useState<SubmissionResponse["payoutBreakdown"]>();
+    const [bankAccountVerified, setBankAccountVerified] = useState<boolean>();
     const [reviewing, setReviewing] = useState<"approve" | "request_revision" | null>(null);
     const [isConfirmingApproval, setIsConfirmingApproval] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +117,10 @@ export default function ProjectSubmissions({
                 }
                 if (controller.signal.aborted) return;
                 setSubmissions(result.submissions);
+                if (role === "freelancer") {
+                    setPayoutBreakdown(result.payoutBreakdown);
+                    setBankAccountVerified(result.bankAccountVerified);
+                }
                 onHistoryLoaded?.(result.submissions.length > 0);
                 setLoadState("ready");
             } catch (loadError) {
@@ -114,7 +131,7 @@ export default function ProjectSubmissions({
         }
         void loadSubmissions();
         return () => controller.abort();
-    }, [loadAttempt, onHistoryLoaded, projectId]);
+    }, [loadAttempt, onHistoryLoaded, projectId, role]);
 
     const latestSubmission = useMemo(() => submissions[submissions.length - 1], [submissions]);
     const canSubmit = role === "freelancer" &&
@@ -124,7 +141,7 @@ export default function ProjectSubmissions({
 
     const submitWork = useCallback(async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        if (isSubmitting || !message.trim()) return;
+        if (isSubmitting || !message.trim() || !commissionAcknowledged) return;
         const links = linkText.split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
         if (links.length > 10 || links.some((link) => {
             try {
@@ -147,6 +164,7 @@ export default function ProjectSubmissions({
         const formData = new FormData();
         formData.set("message", message.trim());
         formData.set("links", JSON.stringify(links));
+        formData.set("commissionAcknowledged", String(commissionAcknowledged));
         files.forEach((file) => formData.append("files", file));
         try {
             const result = await uploadSubmission(projectId, formData, setUploadProgress);
@@ -157,6 +175,7 @@ export default function ProjectSubmissions({
             imagePreviewUrls.current.clear();
             setImagePreviews(new Map());
             setFiles([]);
+            setCommissionAcknowledged(false);
             setIsFormOpen(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
             setUploadProgress(100);
@@ -167,7 +186,7 @@ export default function ProjectSubmissions({
         } finally {
             setIsSubmitting(false);
         }
-    }, [files, isSubmitting, linkText, message, onStatusChange, projectId]);
+    }, [commissionAcknowledged, files, isSubmitting, linkText, message, onStatusChange, projectId]);
 
     async function reviewSubmission(action: "approve" | "request_revision") {
         if (!latestSubmission || reviewing) return;
@@ -266,6 +285,16 @@ export default function ProjectSubmissions({
         {canSubmit && isFormOpen && loadState === "ready" && <form className="dashboard-form project-submission-form" onSubmit={(event) => void submitWork(event)}>
             <h3>{projectStatus === "revision_requested" ? "Resubmit corrected work" : "Submit completed work"}</h3>
             {projectStatus === "revision_requested" && latestSubmission?.feedback && <div className="project-submission-feedback"><strong>Changes requested by the employer</strong><p>{latestSubmission.feedback}</p></div>}
+            {role === "freelancer" && payoutBreakdown && <section className="project-submission-feedback" aria-label="Payout information">
+                <strong>Payout breakdown</strong>
+                <p>Project amount: {money.format(payoutBreakdown.grossAmountKobo / 100)}</p>
+                <p>FreelanceX commission ({payoutBreakdown.commissionRatePercent}%): {money.format(payoutBreakdown.commissionAmountKobo / 100)}</p>
+                <p>Estimated freelancer earnings: {money.format(payoutBreakdown.freelancerNetAmountKobo / 100)}</p>
+                <p>Processing target: within 24 hours after client approval. This is a target, not a guarantee of external bank transfer completion.</p>
+                <p>{bankAccountVerified
+                    ? "Your bank account is verified and eligible for payout."
+                    : <>A bank account must be added and verified before payout. <Link href="/freelancer/dashboard/profile">Manage bank details</Link>.</>}</p>
+            </section>}
             <label htmlFor={`submission-message-${projectId}`}>Completion message <span aria-hidden="true">*</span></label>
             <textarea className="filter-input dashboard-textarea" id={`submission-message-${projectId}`} maxLength={5000} required value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Describe the completed work and anything the employer should know." />
             <label htmlFor={`submission-files-${projectId}`}>Deliverable files (optional, up to 5; 10 MB each)</label>
@@ -273,9 +302,10 @@ export default function ProjectSubmissions({
             {files.length > 0 && <ul className="project-submission-selected-files">{files.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}>{imagePreviews.get(file) && <Image alt={`Preview of ${file.name}`} height={56} src={imagePreviews.get(file) || ""} unoptimized width={72} />}<span>{file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB</span><button aria-label={`Remove ${file.name}`} className="text-link" onClick={() => removeFile(file)} type="button">Remove</button></li>)}</ul>}
             <label htmlFor={`submission-links-${projectId}`}>External links (optional, one HTTPS URL per line)</label>
             <textarea className="filter-input dashboard-textarea" id={`submission-links-${projectId}`} maxLength={20480} value={linkText} onChange={(event) => setLinkText(event.target.value)} placeholder={"https://github.com/...\nhttps://example.com/deliverable"} />
+            <label className="admin-payout-confirm"><input checked={commissionAcknowledged} onChange={(event) => setCommissionAcknowledged(event.target.checked)} required type="checkbox" /> I understand that FreelanceX deducts a {payoutBreakdown?.commissionRatePercent ?? 10}% commission from my project earnings and that my payout will be processed within 24 hours after client approval, provided my bank account is verified.</label>
             {isSubmitting && <div className="project-upload-progress" role="status"><span>{uploadProgress < 100 ? `Uploading files… ${uploadProgress}%` : "Saving submission…"}</span><progress max="100" value={uploadProgress} /></div>}
             <div className="project-submission-actions">
-                <button className="button button-primary" disabled={isSubmitting || !message.trim()} type="submit">{isSubmitting ? "Submitting work..." : "Submit for Review"}</button>
+                <button className="button button-primary" disabled={isSubmitting || !message.trim() || !commissionAcknowledged} type="submit">{isSubmitting ? "Submitting work..." : "Submit for Review"}</button>
                 <button className="button button-quiet" disabled={isSubmitting} onClick={() => setIsFormOpen(false)} type="button">Cancel</button>
             </div>
         </form>}

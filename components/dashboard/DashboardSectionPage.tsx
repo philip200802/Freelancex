@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Bell, BriefcaseBusiness, CheckCircle2, FileText, MessageCircle, Settings, Star, Wallet } from "lucide-react";
+import { Bell, BriefcaseBusiness, CheckCircle2, FileText, Mail, MessageCircle, Settings, Star, Wallet } from "lucide-react";
 import AccountPanel from "@/components/dashboard/AccountPanel";
 import ApplicationList from "@/components/dashboard/ApplicationList";
 import ClientJobsManager from "@/components/dashboard/ClientJobsManager";
 import AdminDisputesPage from "@/components/dashboard/AdminDisputesPage";
+import AdminEmailDeliveryPage from "@/components/dashboard/AdminEmailDeliveryPage";
 import DisputesDashboard from "@/components/dashboard/DisputesDashboard";
 import DashboardShell, { type DashboardRole } from "@/components/dashboard/DashboardShell";
 import MessagesPanel from "@/components/dashboard/MessagesPanel";
@@ -30,7 +31,7 @@ const pageDetails: Record<string, { title: string; description: string; icon: ty
     earnings: { title: "Earnings", description: "Review completed work and its recorded project value.", icon: Wallet },
     reviews: { title: "Reviews", description: "Review feedback connected to completed work.", icon: Star },
     profile: { title: "My Profile", description: "Review and update your account profile.", icon: Settings },
-    settings: { title: "Settings", description: "Manage account visibility and notification preferences.", icon: Settings },
+    settings: { title: "Settings", description: "Manage account visibility and email preferences.", icon: Settings },
     jobs: { title: "My Jobs", description: "Manage the jobs you have posted.", icon: BriefcaseBusiness },
     "post-job": { title: "Post a Job", description: "Give independent professionals the context they need to do their best work.", icon: BriefcaseBusiness },
     freelancers: { title: "Hired Freelancers", description: "Review freelancers whose applications you accepted.", icon: BriefcaseBusiness },
@@ -39,6 +40,7 @@ const pageDetails: Record<string, { title: string; description: string; icon: ty
     disputes: { title: "Disputes & Reports", description: "Review project disputes, evidence, party responses, payment status, and recorded resolutions.", icon: CheckCircle2 },
     categories: { title: "Categories & Skills", description: "Category administration is not yet connected to this application.", icon: Settings },
     activity: { title: "Activity Logs", description: "Activity logs are not yet recorded in this application.", icon: FileText },
+    "email-delivery": { title: "Email Delivery", description: "Review workflow email outbox status and retry eligible failed messages.", icon: Mail },
 };
 
 function EmptyPanel({ title, message, action }: { title: string; message: string; action?: { label: string; href: string } }) {
@@ -58,6 +60,7 @@ export default async function DashboardSectionPage({ role, section, searchParams
     const user = await getCurrentUser();
     if (!user) redirect("/login");
     if (user.role !== role) redirect(user.role === "employer" ? "/client/dashboard" : user.role === "freelancer" ? "/freelancer/dashboard" : "/admin/dashboard");
+    if (role === "admin" && ["messages", "freelancers", "employers", "clients", "client"].includes(section)) redirect("/admin/dashboard");
 
     await connectToDatabase();
     const profile = await User.findById(user.userId).select("name email").lean();
@@ -123,6 +126,11 @@ export default async function DashboardSectionPage({ role, section, searchParams
     if (role === "admin" && section === "disputes") {
         return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title={details.title} description={details.description}>
             <AdminDisputesPage />
+        </DashboardShell>;
+    }
+    if (role === "admin" && section === "email-delivery") {
+        return <DashboardShell role={role} userName={profile.name} userEmail={profile.email} title={details.title} description={details.description}>
+            <AdminEmailDeliveryPage />
         </DashboardShell>;
     }
     if (section === "disputes" && (role === "employer" || role === "freelancer")) {

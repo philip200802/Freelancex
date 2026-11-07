@@ -21,6 +21,42 @@ export const disputeReasons = [
 ] as const;
 export type DisputeReason = typeof disputeReasons[number];
 
+export interface DisputeOpeningInput {
+    task: mongoose.Types.ObjectId;
+    employer: mongoose.Types.ObjectId;
+    freelancer: mongoose.Types.ObjectId;
+    reason: DisputeReason;
+    description: string;
+    evidenceLinks: string[];
+    projectStatusBeforeDispute: string;
+    entryId: string;
+    authorName: string;
+    createdAt: Date;
+}
+
+export function buildDisputeOpeningDocument(input: DisputeOpeningInput) {
+    return {
+        task: input.task,
+        employer: input.employer,
+        freelancer: input.freelancer,
+        reason: input.reason,
+        description: input.description,
+        evidenceLinks: input.evidenceLinks,
+        status: "open" as const,
+        projectStatusBeforeDispute: input.projectStatusBeforeDispute,
+        history: [{
+            entryId: input.entryId,
+            author: input.employer,
+            authorRole: "employer" as const,
+            authorName: input.authorName,
+            message: input.description,
+            attachments: input.evidenceLinks,
+            readBy: [input.employer],
+            createdAt: input.createdAt,
+        }],
+    };
+}
+
 export interface IDispute extends Document {
     task: mongoose.Types.ObjectId;
     employer: mongoose.Types.ObjectId;

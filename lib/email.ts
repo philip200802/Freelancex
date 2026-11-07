@@ -22,6 +22,12 @@ async function sendWithBrevoApi(message: EmailMessage) {
         } catch { /* Keep the sanitized fallback when Brevo does not return JSON. */ }
         throw new Error(`Brevo API rejected email with status ${response.status}; code=${providerCode}; message=${providerMessage}`);
     }
+    try {
+        const body = await response.json() as { messageId?: unknown };
+        return typeof body.messageId === "string" ? body.messageId : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 async function sendWithSmtp(message: EmailMessage) {
@@ -32,7 +38,8 @@ async function sendWithSmtp(message: EmailMessage) {
     const missing = [!host && "SMTP_SERVER/SMTP_HOST", !user && "SMTP_USER", !password && "SMTP_KEY/SMTP_PASSWORD"].filter(Boolean);
     if (missing.length) throw new Error(`SMTP configuration is incomplete. Missing: ${missing.join(", ")}.`);
     const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass: password } });
-    await transporter.sendMail({ from: getSender(), to: message.to, subject: message.subject, html: message.html, text: message.text });
+    const result = await transporter.sendMail({ from: getSender(), to: message.to, subject: message.subject, html: message.html, text: message.text });
+    return typeof result.messageId === "string" ? result.messageId : undefined;
 }
 
 async function sendEmail(message: EmailMessage) {
@@ -98,13 +105,13 @@ export async function sendWorkflowEmail({
     details: Array<{ label: string; value: string }>;
     actionUrl: string;
     actionLabel: string;
-}) {
+}): Promise<string | undefined> {
     const text = [
         `Hi ${recipientName}, ${message}`,
         ...details.map(({ label, value }) => `${label}: ${value}`),
         `${actionLabel}: ${actionUrl}`,
     ].join("\n\n");
-    await sendEmail({
+    return sendEmail({
         to,
         subject,
         html: workflowEmail({ heading, recipientName, message, details, actionUrl, actionLabel }),

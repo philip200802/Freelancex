@@ -4,7 +4,7 @@ import Task from "@/models/Task";
 import { verifyPaystackTransaction } from "@/lib/payments/paystack";
 import Notification from "@/models/Notification";
 import User from "@/models/User";
-import { sendWorkflowEmailSafely } from "@/lib/workflow-email";
+import { processWorkflowEmailOutbox, queueWorkflowEmail, queueWorkflowEmailToAdmins } from "@/lib/workflow-email";
 
 const fundedProjectStatuses = ["funded", "in_progress", "submitted", "revision_requested", "completed", "disputed"];
 
@@ -69,6 +69,7 @@ export async function settlePaystackTransaction(reference: string) {
     let newlySettled = false;
     let createdNotifications = 0;
     let projectStatusUpdated = false;
+    const workflowEmailIds: mongoose.Types.ObjectId[] = [];
     try {
         await session.withTransaction(async () => {
             newlySettled = false;
@@ -161,6 +162,66 @@ export async function settlePaystackTransaction(reference: string) {
                 );
                 createdNotifications += result.upsertedCount;
             }
+
+            if (isFundedProjectStatus(finalTaskStatus)) {
+                const [client, freelancer] = await Promise.all([
+                    User.findById(currentPayment.employer).select("name email isVerified").session(session).lean(),
+                    User.findById(currentPayment.freelancer).select("name email isVerified").session(session).lean(),
+                ]);
+                const fundingDetails = [
+                    { label: "Project title", value: task.title },
+                    { label: "Client", value: client?.name || "Client" },
+                    { label: "Freelancer", value: freelancer?.name || "Freelancer" },
+                    { label: "Amount", value: new Intl.NumberFormat("en-NG", { style: "currency", currency: currentPayment.currency, maximumFractionDigits: 2 }).format(currentPayment.amount) },
+                    { label: "Project reference", value: currentPayment.task.toString() },
+                    { label: "Payment reference", value: reference },
+                ];
+                const emailEvents = [
+                    {
+                        event: "project_funded_client",
+                        dedupe: `payment:${reference}:funded:client`,
+                        recipient: client,
+                        message: "Your project funding was verified successfully. The funds are recorded against this project.",
+                        actionPath: `/client/dashboard/projects/${currentPayment.task}`,
+                        actionLabel: "View project",
+                    },
+                    {
+                        event: "project_funded_freelancer",
+                        dedupe: `payment:${reference}:funded:freelancer`,
+                        recipient: freelancer,
+                        message: "The client’s project funding was verified successfully. You may begin work according to the project agreement.",
+                        actionPath: `/freelancer/dashboard/projects/${currentPayment.task}`,
+                        actionLabel: "Open project",
+                    },
+                ] as const;
+                for (const event of emailEvents) {
+                    const emailId = await queueWorkflowEmail(event.event, event.dedupe, event.recipient, {
+                        subject: "Project funding confirmed on FreelanceX",
+                        heading: "Project funding confirmed",
+                        message: event.message,
+                        details: fundingDetails,
+                        actionPath: event.actionPath,
+                        actionLabel: event.actionLabel,
+                        relatedTask: currentPayment.task,
+                    }, session);
+                    if (emailId) workflowEmailIds.push(emailId);
+                }
+                const adminEmailIds = await queueWorkflowEmailToAdmins(
+                    "project_funded_admin",
+                    `payment:${reference}:funded:admin`,
+                    {
+                        subject: "Project funded — payment verified",
+                        heading: "Project payment verified",
+                        message: "A client’s project payment has been verified successfully. This message is sent after payment confirmation, not on initialization or failure.",
+                        details: fundingDetails,
+                        actionPath: "/admin/dashboard/transactions",
+                        actionLabel: "Review transactions",
+                        relatedTask: currentPayment.task,
+                    },
+                    session,
+                );
+                workflowEmailIds.push(...adminEmailIds);
+            }
         });
     } finally {
         await session.endSession();
@@ -172,32 +233,11 @@ export async function settlePaystackTransaction(reference: string) {
         console.info("Project funding notification created.", { reference, count: createdNotifications });
     }
 
-    if (newlySettled && isFundedProjectStatus(finalTaskStatus)) {
+    if (workflowEmailIds.length) {
         try {
-            const [task, client, freelancer] = await Promise.all([
-                Task.findById(payment.task).select("title").lean(),
-                User.findById(payment.employer).select("name").lean(),
-                User.findById(payment.freelancer).select("name email isVerified").lean(),
-            ]);
-            if (task) {
-                const emailResult = await sendWorkflowEmailSafely("project_funded_freelancer", freelancer, {
-                    subject: "A project has been funded — you can begin work.",
-                    heading: "Project Funded — Work Can Begin",
-                    message: `The client has successfully funded ${task.title}. You can now begin working on the project. Review the brief and coordinate next steps with the client in your project workspace.`,
-                    details: [
-                        { label: "Project title", value: task.title },
-                        { label: "Client", value: client?.name || "Client" },
-                        { label: "Funded amount", value: new Intl.NumberFormat("en-NG", { style: "currency", currency: payment.currency, maximumFractionDigits: 2 }).format(payment.amount) },
-                        { label: "Funding", value: "Payment verified and completed" },
-                        { label: "Project reference", value: payment.task.toString() },
-                    ],
-                    actionPath: `/freelancer/dashboard/projects/${payment.task.toString()}`,
-                    actionLabel: "Open project workspace",
-                });
-                console.info("Project funding email delivery result.", { reference, result: emailResult });
-            }
+            await processWorkflowEmailOutbox(workflowEmailIds.length, workflowEmailIds);
         } catch (emailError) {
-            console.error("Project funding email could not be prepared.", {
+            console.error("Project funding emails could not be dispatched.", {
                 reference,
                 errorName: emailError instanceof Error ? emailError.name : "UnknownError",
             });

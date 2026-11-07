@@ -3,12 +3,12 @@ import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { getCurrentUser } from "@/lib/current-user";
-import Dispute, { disputeReasons, type DisputeReason, type IDispute } from "@/models/Dispute";
+import Dispute, { buildDisputeOpeningDocument, disputeReasons, type DisputeReason, type IDispute } from "@/models/Dispute";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import Task from "@/models/Task";
 import User from "@/models/User";
 import Notification from "@/models/Notification";
-import { sendWorkflowEmailSafely, sendWorkflowEmailToAdminsSafely } from "@/lib/workflow-email";
+import { processWorkflowEmailOutbox, queueWorkflowEmail, queueWorkflowEmailToAdmins } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
 const activeStatuses = ["open", "under_review", "awaiting_client_response", "awaiting_freelancer_response"];
@@ -50,7 +50,9 @@ function serializeDispute(dispute: {
         history: dispute.history.map((entry) => ({
             entryId: entry.entryId,
             authorId: getAuthorId(entry.author),
-            authorName: getAuthorName(entry.author) || entry.authorName || "",
+            authorName: entry.authorRole === "admin"
+                ? "FreelanceX Support Team"
+                : getAuthorName(entry.author) || entry.authorName || "",
             authorRole: entry.authorRole,
             message: entry.message,
             attachments: entry.attachments || [],
@@ -88,6 +90,38 @@ function validateEvidenceLinks(value: unknown): string[] | null {
         }
     }
     return links;
+}
+
+function diagnosticValue(value: string) {
+    return value
+        .replace(/mongodb(?:\+srv)?:\/\/[^\s"'`]+/gi, "[database-url]")
+        .replace(/(password|passwd|secret|token|apikey)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+        .slice(0, 500);
+}
+
+function disputeErrorDetails(
+    error: unknown,
+    operation: string,
+    sessionContext?: { inTransaction: boolean; hasEnded: boolean },
+) {
+    const errorObject = error && typeof error === "object" ? error : undefined;
+    const mongooseErrorType = error instanceof mongoose.Error
+        ? error.constructor.name
+        : errorObject && "name" in errorObject && typeof errorObject.name === "string"
+            ? errorObject.name
+            : "UnknownError";
+    return {
+        operation,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        message: error instanceof Error ? diagnosticValue(error.message) : "Unknown failure",
+        mongooseErrorType,
+        ...(errorObject && "code" in errorObject ? { mongoCode: errorObject.code } : {}),
+        connectionReadyState: mongoose.connection.readyState,
+        ...(sessionContext ? { session: sessionContext } : {}),
+        ...(process.env.NODE_ENV === "development" && error instanceof Error && error.stack
+            ? { stack: diagnosticValue(error.stack) }
+            : {}),
+    };
 }
 
 export async function GET(request: Request) {
@@ -224,51 +258,65 @@ export async function POST(request: Request) {
     if (!description || description.length > 5000) return jsonNoStore({ error: "Explain the issue in 1 to 5000 characters." }, { status: 400 });
     if (!evidenceLinks) return jsonNoStore({ error: "Provide up to ten valid HTTPS evidence links." }, { status: 400 });
 
+    let operation = "connect to database";
+    let transactionFailureContext: { inTransaction: boolean; hasEnded: boolean } | undefined;
     try {
         await connectToDatabase();
-        const task = await Task.findOne({ _id: projectId, employer: currentUser.userId }).select("_id title employer freelancer status").lean();
+        operation = "load eligible project";
+        const task = await Task.findOne({
+            _id: projectId,
+            employer: currentUser.userId,
+            isDeleted: { $ne: true },
+        }).select("_id title employer freelancer status").lean();
         if (!task) return jsonNoStore({ error: "Project not found." }, { status: 404 });
         if (!task.freelancer || !eligibleProjectStatuses.includes(task.status)) {
             return jsonNoStore({ error: "A dispute can only be opened for an assigned project with work in progress, submitted or completed." }, { status: 409 });
         }
+        operation = "check for active dispute";
         if (await Dispute.exists({ task: projectId, status: { $in: activeStatuses } })) {
             return jsonNoStore({ error: "This project already has an active dispute." }, { status: 409 });
         }
 
+        operation = "load dispute opener";
         const opener = await User.findById(currentUser.userId).select("name").lean();
-        const session = await mongoose.startSession();
+        operation = "start dispute transaction session";
+        const session = await mongoose.connection.startSession();
         let disputeId = "";
         let createdDispute: InstanceType<typeof Dispute> | undefined;
+        const workflowEmailIds: mongoose.Types.ObjectId[] = [];
         try {
             await session.withTransaction(async () => {
+                operation = "claim project for dispute";
                 const updatedTask = await Task.findOneAndUpdate(
-                    { _id: projectId, employer: currentUser.userId, freelancer: task.freelancer, status: task.status },
+                    {
+                        _id: projectId,
+                        employer: currentUser.userId,
+                        freelancer: task.freelancer,
+                        status: task.status,
+                        isDeleted: { $ne: true },
+                    },
                     { $set: { status: "disputed" } },
                     { returnDocument: "after", session },
                 );
-                if (!updatedTask) throw new Error("DISPUTE_PROJECT_STATE_CHANGED");
-                const [dispute] = await Dispute.create([{
-                    task: projectId,
-                    employer: currentUser.userId,
-                    freelancer: task.freelancer,
-                    reason,
+                if (!updatedTask || !updatedTask.employer || !updatedTask.freelancer) {
+                    throw new Error("DISPUTE_PROJECT_STATE_CHANGED");
+                }
+                operation = "create dispute document";
+                const [dispute] = await Dispute.create([buildDisputeOpeningDocument({
+                    task: updatedTask._id,
+                    employer: updatedTask.employer,
+                    freelancer: updatedTask.freelancer,
+                    reason: reason as DisputeReason,
                     description,
                     evidenceLinks,
-                    status: "open",
                     projectStatusBeforeDispute: task.status,
-                    history: [{
-                        entryId: randomUUID(),
-                        author: currentUser.userId,
-                        authorRole: currentUser.role,
-                        authorName: opener?.name || "Client",
-                        message: description,
-                        attachments: evidenceLinks,
-                        readBy: [currentUser.userId],
-                        createdAt: new Date(),
-                    }],
-                }], { session });
+                    entryId: randomUUID(),
+                    authorName: opener?.name || "Client",
+                    createdAt: new Date(),
+                })], { session });
                 disputeId = dispute.id;
                 createdDispute = dispute;
+                operation = "create participant dispute notifications";
                 await Notification.create([
                     {
                         recipient: task.employer,
@@ -294,9 +342,11 @@ export async function POST(request: Request) {
                         eventKey: `dispute:${dispute._id}:opened`,
                         href: `/freelancer/dashboard/disputes?disputeId=${dispute._id}`,
                     },
-                ], { session });
+                ], { session, ordered: true });
+                operation = "load dispute notification administrators";
                 const admins = await User.find({ role: "admin" }).select("_id").session(session).lean();
                 if (admins.length) {
+                    operation = "create administrator dispute notifications";
                     await Notification.create(admins.map((admin) => ({
                         recipient: admin._id,
                         recipientRole: "admin" as const,
@@ -308,10 +358,69 @@ export async function POST(request: Request) {
                         relatedDispute: dispute._id,
                         eventKey: `dispute:${dispute._id}:opened`,
                         href: `/admin/dashboard/disputes#${dispute._id}`,
-                    })), { session });
+                    })), { session, ordered: true });
                 }
+                const [client, freelancer] = await Promise.all([
+                    User.findById(updatedTask.employer).select("name email isVerified").session(session).lean(),
+                    User.findById(updatedTask.freelancer).select("name email isVerified").session(session).lean(),
+                ]);
+                const emailDetails = [
+                    { label: "Project", value: task.title },
+                    { label: "Reason", value: reasonLabels[reason as DisputeReason] },
+                ];
+                const clientEmailId = await queueWorkflowEmail(
+                    "dispute_opened",
+                    `dispute:${dispute._id}:opened:client`,
+                    client,
+                    {
+                        subject: "A FreelanceX project dispute has been opened",
+                        heading: "Project dispute opened",
+                        message: "A dispute has been opened for a project you are involved in. Sign in to review the details and respond.",
+                        details: emailDetails,
+                        actionPath: `/client/dashboard/disputes?disputeId=${dispute._id}`,
+                        actionLabel: "View dispute",
+                        relatedTask: updatedTask._id,
+                    },
+                    session,
+                );
+                const freelancerEmailId = await queueWorkflowEmail(
+                    "dispute_opened",
+                    `dispute:${dispute._id}:opened:freelancer`,
+                    freelancer,
+                    {
+                        subject: "A FreelanceX project dispute has been opened",
+                        heading: "Project dispute opened",
+                        message: "A dispute has been opened for a project you are involved in. Sign in to review the details and respond.",
+                        details: emailDetails,
+                        actionPath: `/freelancer/dashboard/disputes?disputeId=${dispute._id}`,
+                        actionLabel: "View dispute",
+                        relatedTask: updatedTask._id,
+                    },
+                    session,
+                );
+                if (clientEmailId) workflowEmailIds.push(clientEmailId);
+                if (freelancerEmailId) workflowEmailIds.push(freelancerEmailId);
+                const adminEmailIds = await queueWorkflowEmailToAdmins(
+                    "dispute_opened_admin",
+                    `dispute:${dispute._id}:opened:admin`,
+                    {
+                        subject: "New project dispute requires review",
+                        heading: "Project dispute opened",
+                        message: "A project participant opened a dispute. Review the case in the admin dashboard. Evidence and sensitive account details are not included in this email.",
+                        details: emailDetails,
+                        actionPath: `/admin/dashboard/disputes#${dispute._id}`,
+                        actionLabel: "Review dispute",
+                        relatedTask: updatedTask._id,
+                    },
+                    session,
+                );
+                workflowEmailIds.push(...adminEmailIds);
             });
         } catch (error) {
+            transactionFailureContext = {
+                inTransaction: session.inTransaction(),
+                hasEnded: session.hasEnded,
+            };
             if (error instanceof Error && error.message === "DISPUTE_PROJECT_STATE_CHANGED") {
                 return jsonNoStore({ error: "The project changed before the dispute could be opened. Refresh and try again." }, { status: 409 });
             }
@@ -324,37 +433,15 @@ export async function POST(request: Request) {
         }
 
         try {
-            const [client, freelancer] = await Promise.all([
-                User.findById(task.employer).select("name email isVerified").lean(),
-                User.findById(task.freelancer).select("name email isVerified").lean(),
-            ]);
-            const email = {
-                subject: "A FreelanceX project dispute has been opened.",
-                heading: "Project dispute opened",
-                message: "A dispute has been opened for a project you are involved in. Sign in to review the details and respond.",
-                details: [
-                    { label: "Project", value: task.title },
-                    { label: "Reason", value: reasonLabels[reason as DisputeReason] },
-                ],
-                actionPath: `/client/dashboard/disputes?disputeId=${disputeId}`,
-                actionLabel: "View dispute",
-            };
-            await Promise.all([
-                sendWorkflowEmailSafely("dispute_opened", client, email),
-                sendWorkflowEmailSafely("dispute_opened", freelancer, { ...email, actionPath: `/freelancer/dashboard/disputes?disputeId=${disputeId}` }),
-                sendWorkflowEmailToAdminsSafely("dispute_opened", {
-                    ...email,
-                    message: "A new project dispute needs administrator review.",
-                    actionPath: `/admin/dashboard/disputes#${disputeId}`,
-                }),
-            ]);
+            operation = "dispatch dispute emails";
+            await processWorkflowEmailOutbox(workflowEmailIds.length, workflowEmailIds);
         } catch (error) {
-            console.error("Dispute notification could not be prepared.", { errorName: error instanceof Error ? error.name : "UnknownError" });
+            console.error("Dispute notification could not be prepared.", disputeErrorDetails(error, operation));
         }
 
         return jsonNoStore({ dispute: createdDispute ? serializeDispute(createdDispute.toObject()) : { id: disputeId } }, { status: 201 });
     } catch (error) {
-        console.error("Dispute creation error.", { errorName: error instanceof Error ? error.name : "UnknownError" });
+        console.error("Dispute creation error.", disputeErrorDetails(error, operation, transactionFailureContext));
         return jsonNoStore({ error: "The dispute could not be saved." }, { status: 503 });
     }
 }

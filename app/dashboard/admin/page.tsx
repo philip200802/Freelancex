@@ -41,7 +41,6 @@ export default async function AdminDashboard() {
                     <div><span>Jobs and statuses</span><strong>Connected</strong></div>
                     <div><span>Paystack payments</span><strong>{verifiedTransactions} verified</strong></div>
                     <div><span>Admin activity</span><strong>{activityCount} records</strong></div>
-                    <div><span>Messages</span><strong>Connected</strong></div>
                     <div><span>Disputes and reports</span><strong>Not implemented</strong></div>
                 </div>
             </section>

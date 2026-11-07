@@ -18,7 +18,7 @@ export default async function AdminPayoutsRoute() {
     const admin = await User.findById(currentUser.userId).select("name email").lean();
     if (!admin) redirect("/login");
 
-    return <DashboardShell role="admin" userName={admin.name} userEmail={admin.email} title="Manual Freelancer Payouts" description="Record completed manual transfers for approved, paid projects. FreelanceX does not initiate transfers.">
+    return <DashboardShell role="admin" userName={admin.name} userEmail={admin.email} title="Manual Freelancer Payouts" description="Track approved payouts and record completed manual net transfers. FreelanceX does not initiate transfers.">
         <AdminPayoutsPage />
     </DashboardShell>;
 }

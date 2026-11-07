@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import { decryptBankAccountNumber, encryptBankAccountNumber, BankAccountEncryptionConfigurationError } from "@/lib/bank-account-crypto";
 import { getCurrentUser } from "@/lib/current-user";
@@ -13,6 +14,7 @@ import {
 } from "@/lib/payments/paystack";
 import User from "@/models/User";
 import BankAccount from "@/models/BankAccount";
+import { processWorkflowEmailOutbox, queueWorkflowEmailToAdmins } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
 const activeBankVerifications = new Set<string>();
@@ -205,7 +207,47 @@ export async function PUT(request: Request) {
         const bank = banks.find((candidate) => candidate.code === bankCode);
         if (!bank) return failure(400, "INVALID_BANK_CODE", "Choose a bank from the current bank list.", false);
 
-        const verifiedAccount = await resolvePaystackBankAccount(accountNumber, bank.code);
+        let verifiedAccount: Awaited<ReturnType<typeof resolvePaystackBankAccount>>;
+        try {
+            verifiedAccount = await resolvePaystackBankAccount(accountNumber, bank.code);
+        } catch (verificationError) {
+            if (verificationError instanceof PaystackRequestError && verificationError.verificationFailure) {
+                try {
+                    const session = await mongoose.connection.startSession();
+                    const emailIds: mongoose.Types.ObjectId[] = [];
+                    try {
+                        await session.withTransaction(async () => {
+                            const adminEmailIds = await queueWorkflowEmailToAdmins(
+                                "bank_verification_failed_admin",
+                                `bank-verification-failed:${currentUser.userId}:${bank.code}:${new Date().toISOString().slice(0, 10)}`,
+                                {
+                                    subject: "Freelancer bank account verification failed",
+                                    heading: "Bank verification failed",
+                                    message: "A freelancer’s bank account verification attempt was rejected by the verification provider. No account number is included in this alert.",
+                                    details: [
+                                        { label: "Freelancer", value: user.name },
+                                        { label: "Bank", value: bank.name },
+                                        { label: "Result", value: "Verification failed" },
+                                    ],
+                                    actionPath: "/admin/dashboard/bank-accounts",
+                                    actionLabel: "Review bank accounts",
+                                },
+                                session,
+                            );
+                            emailIds.push(...adminEmailIds);
+                        });
+                    } finally {
+                        await session.endSession();
+                    }
+                    await processWorkflowEmailOutbox(emailIds.length, emailIds);
+                } catch (emailError) {
+                    console.error("Bank verification failure admin email could not be queued.", {
+                        errorName: emailError instanceof Error ? emailError.name : "UnknownError",
+                    });
+                }
+            }
+            throw verificationError;
+        }
 
         const recipient = await savePaystackTransferRecipient({
             name: verifiedAccount.account_name,

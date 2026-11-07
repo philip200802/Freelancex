@@ -18,6 +18,12 @@ export interface IProjectSubmission extends Document {
     }>;
     links: string[];
     status: ProjectSubmissionStatus;
+    commissionAcknowledged?: boolean;
+    commissionAcknowledgedAt?: Date;
+    grossAmountKobo?: number;
+    commissionRatePercent?: number;
+    commissionAmountKobo?: number;
+    freelancerNetAmountKobo?: number;
     feedback?: string;
     reviewedBy?: mongoose.Types.ObjectId;
     reviewedAt?: Date;
@@ -50,6 +56,12 @@ const ProjectSubmissionSchema = new Schema<IProjectSubmission>({
         validate: { validator: (links: unknown[]) => links.length <= 10, message: "A submission can include at most ten links." },
     },
     status: { type: String, enum: ["submitted", "revision_requested", "approved"], required: true, default: "submitted" },
+    commissionAcknowledged: { type: Boolean, default: false },
+    commissionAcknowledgedAt: { type: Date },
+    grossAmountKobo: { type: Number, min: 1 },
+    commissionRatePercent: { type: Number, min: 0, max: 100 },
+    commissionAmountKobo: { type: Number, min: 0 },
+    freelancerNetAmountKobo: { type: Number, min: 0 },
     feedback: { type: String, trim: true, maxlength: 5000 },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User" },
     reviewedAt: { type: Date },
@@ -63,4 +75,16 @@ ProjectSubmissionSchema.index(
     { unique: true, partialFilterExpression: { status: "submitted" } },
 );
 
-export default mongoose.models.ProjectSubmission || mongoose.model<IProjectSubmission>("ProjectSubmission", ProjectSubmissionSchema);
+const cachedProjectSubmissionModel = mongoose.models.ProjectSubmission;
+if (cachedProjectSubmissionModel) {
+    const missingSubmissionPaths: Record<string, mongoose.SchemaDefinitionProperty<unknown>> = {};
+    if (!cachedProjectSubmissionModel.schema.path("commissionAcknowledged")) missingSubmissionPaths.commissionAcknowledged = { type: Boolean, default: false };
+    if (!cachedProjectSubmissionModel.schema.path("commissionAcknowledgedAt")) missingSubmissionPaths.commissionAcknowledgedAt = { type: Date };
+    if (!cachedProjectSubmissionModel.schema.path("grossAmountKobo")) missingSubmissionPaths.grossAmountKobo = { type: Number, min: 1 };
+    if (!cachedProjectSubmissionModel.schema.path("commissionRatePercent")) missingSubmissionPaths.commissionRatePercent = { type: Number, min: 0, max: 100 };
+    if (!cachedProjectSubmissionModel.schema.path("commissionAmountKobo")) missingSubmissionPaths.commissionAmountKobo = { type: Number, min: 0 };
+    if (!cachedProjectSubmissionModel.schema.path("freelancerNetAmountKobo")) missingSubmissionPaths.freelancerNetAmountKobo = { type: Number, min: 0 };
+    if (Object.keys(missingSubmissionPaths).length) cachedProjectSubmissionModel.schema.add(missingSubmissionPaths);
+}
+
+export default cachedProjectSubmissionModel || mongoose.model<IProjectSubmission>("ProjectSubmission", ProjectSubmissionSchema);

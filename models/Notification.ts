@@ -3,13 +3,13 @@ import mongoose, { Document, Schema } from "mongoose";
 export type NotificationType =
     | "job_created" | "job_cancelled" | "job_deleted" | "application" | "application_accepted" | "application_rejected"
     | "message" | "payment_funded" | "project_funded" | "project_completed" | "payout_recorded" | "submission" | "deliverable_submitted"
-    | "admin_submission" | "submission_approved" | "revision_requested" | "dispute_opened" | "dispute_updated"
+    | "admin_submission" | "submission_approved" | "revision_requested" | "payout_pending" | "payout_blocked" | "payout_failed" | "dispute_opened" | "dispute_updated"
     | "dispute_resolved" | "dispute_message" | "admin_dispute" | "account" | "account_removed" | "system";
 
 export const notificationTypes: NotificationType[] = [
     "job_created", "job_cancelled", "job_deleted", "application", "application_accepted", "application_rejected",
     "message", "payment_funded", "project_funded", "project_completed", "payout_recorded", "submission", "deliverable_submitted",
-    "admin_submission", "submission_approved", "revision_requested", "dispute_opened", "dispute_updated",
+    "admin_submission", "submission_approved", "revision_requested", "payout_pending", "payout_blocked", "payout_failed", "dispute_opened", "dispute_updated",
     "dispute_resolved", "dispute_message", "admin_dispute", "account", "account_removed", "system",
 ];
 

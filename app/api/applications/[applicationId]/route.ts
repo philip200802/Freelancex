@@ -7,7 +7,7 @@ import Conversation from "@/models/Conversation";
 import Notification from "@/models/Notification";
 import Task from "@/models/Task";
 import User from "@/models/User";
-import { sendWorkflowEmailSafely } from "@/lib/workflow-email";
+import { queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,11 @@ async function notifyApplicationDecision({
 }) {
     try {
         const freelancer = await User.findById(freelancerId).select("name email isVerified").lean();
-        await sendWorkflowEmailSafely(`application_${action}`, freelancer, action === "accept" ? {
+    await queueWorkflowEmailsAfterCommit([{
+        workflowEvent: `application_${action}`,
+        dedupeKey: `task:${taskId}:application:${String(freelancerId)}:${action}`,
+        recipient: freelancer,
+        email: action === "accept" ? {
             subject: "Congratulations! Your FreelanceX application has been accepted.",
             heading: "Your application was accepted",
             message: "The client accepted your application. Review the project details and follow the funding status before starting work.",
@@ -44,7 +48,8 @@ async function notifyApplicationDecision({
             details: [{ label: "Job", value: taskTitle }],
             actionPath: "/freelancer/dashboard/applications",
             actionLabel: "View applications",
-        });
+        },
+    }]);
     } catch (error) {
         console.error("Application decision email could not be prepared.", {
             errorName: error instanceof Error ? error.name : "UnknownError",

@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { getCurrentUser } from "@/lib/current-user";
-import { sendNewJobAlertEmail } from "@/lib/email";
 import Task, { type TaskCategory } from "@/models/Task";
 import User from "@/models/User";
-import UserPreference from "@/models/UserPreference";
 import Notification from "@/models/Notification";
-import { sendWorkflowEmailSafely } from "@/lib/workflow-email";
+import { queueWorkflowEmailsAfterCommit, type WorkflowEmailQueueItem } from "@/lib/workflow-email";
 
 const categories: TaskCategory[] = ["Development", "Design", "Writing", "Marketing"];
 
@@ -144,50 +142,57 @@ export async function POST(request: Request) {
         }
 
         try {
-            const client = await User.findById(currentUser.userId).select("name email isVerified").lean();
-            await sendWorkflowEmailSafely("job_created_client", client, {
+            const [client, freelancers] = await Promise.all([
+                User.findById(currentUser.userId).select("name email isVerified").lean(),
+                User.find({ role: "freelancer", isVerified: true, isActive: true })
+                    .select("name email isVerified")
+                    .lean(),
+            ]);
+            const budget = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(task.amount);
+            const workflowEmails: WorkflowEmailQueueItem[] = [{
+                workflowEvent: "job_created_client",
+                dedupeKey: `task:${task._id}:created:client`,
+                recipient: client,
+                email: {
                 subject: "Your FreelanceX job posting is live.",
                 heading: "Job posting created",
                 message: "Your job was saved successfully and is now available to freelancers.",
                 details: [
                     { label: "Job title", value: task.title },
                     { label: "Job reference", value: task._id.toString() },
-                    { label: "Budget", value: new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(task.amount) },
+                    { label: "Budget", value: budget },
                     { label: "Category", value: task.category },
                     { label: "Created", value: task.createdAt.toLocaleString("en-NG", { timeZone: "UTC" }) + " UTC" },
                 ],
                 actionPath: `/client/dashboard/projects/${task._id}`,
                 actionLabel: "View job",
-            });
-        } catch (mailError) {
-            console.error("Job creation confirmation email could not be prepared.", { errorName: mailError instanceof Error ? mailError.name : "UnknownError" });
-        }
-
-        try {
-            const freelancers = await User.find({ role: "freelancer", isVerified: true })
-                .select("name email")
-                .lean();
-            const taskUrl = `${process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin}/freelancer/dashboard/jobs/${task._id}`;
-            const preferences = await UserPreference.find({ user: { $in: freelancers.map((freelancer) => freelancer._id) } }).select("user emailNotifications").lean();
-            const allowedUserIds = new Set((preferences.filter((preference) => preference.emailNotifications !== false)).map((preference) => preference.user.toString()));
-            const emailRecipients = freelancers.filter((freelancer) => allowedUserIds.has(String(freelancer._id)));
-            for (const freelancer of emailRecipients) {
-                try {
-                    await sendNewJobAlertEmail({
-                        email: freelancer.email,
-                        freelancerName: freelancer.name,
-                        jobTitle: title,
-                        description,
-                        budget: amount,
-                        category,
-                        jobUrl: taskUrl,
-                    });
-                } catch (mailError) {
-                    console.error("New job email alert failed:", { errorName: mailError instanceof Error ? mailError.name : "UnknownError" });
-                }
+                },
+            }];
+            for (const freelancer of freelancers) {
+                workflowEmails.push({
+                    workflowEvent: "new_job_alert",
+                    dedupeKey: `task:${task._id}:job-alert`,
+                    recipient: freelancer,
+                    email: {
+                        subject: `New project opportunity: ${task.title}`,
+                        heading: "A new project is available",
+                        message: "A new project has been posted that may interest you.",
+                        details: [
+                            { label: "Job title", value: task.title },
+                            { label: "Description", value: task.description },
+                            { label: "Budget", value: budget },
+                            { label: "Category", value: task.category },
+                        ],
+                        actionPath: `/freelancer/dashboard/jobs/${task._id}`,
+                        actionLabel: "View project",
+                    },
+                });
             }
+            await queueWorkflowEmailsAfterCommit(workflowEmails);
         } catch (mailError) {
-            console.error("New job email alerts could not be prepared.", { errorName: mailError instanceof Error ? mailError.name : "UnknownError" });
+            console.error("Job emails could not be queued after project creation.", {
+                errorName: mailError instanceof Error ? mailError.name : "UnknownError",
+            });
         }
 
         return jsonNoStore({

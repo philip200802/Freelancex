@@ -133,7 +133,7 @@ export default function DisputesDashboard({ role }: { role: Role }) {
                 <h3>Conversation</h3>
                 {!dispute.history.length && <p className="muted-copy">No messages yet.</p>}
                 <ol className="project-dispute-history">{dispute.history.map((entry) => <li key={entry.entryId}>
-                    <div><strong>{entry.authorName || (entry.authorRole === "admin" ? "FreelanceX Support" : entry.authorRole === "employer" ? "Client" : "Freelancer")}</strong><span>{entry.authorRole}</span><time>{new Date(entry.createdAt).toLocaleString()}</time></div>
+                    <div><strong>{entry.authorName || (entry.authorRole === "admin" ? "FreelanceX Support Team" : entry.authorRole === "employer" ? "Client" : "Freelancer")}</strong><span>{entry.authorRole === "admin" ? "FreelanceX Support Team" : entry.authorRole}</span><time>{new Date(entry.createdAt).toLocaleString()}</time></div>
                     <p>{entry.message}</p>
                     {entry.attachments?.length > 0 && <ul className="project-submission-links">{entry.attachments.map((url) => <li key={url}><a href={url} rel="noreferrer" target="_blank">{new URL(url).hostname}</a></li>)}</ul>}
                 </li>)}</ol>
