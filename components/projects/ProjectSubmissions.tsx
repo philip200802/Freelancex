@@ -339,7 +339,7 @@ export default function ProjectSubmissions({
             <label htmlFor={`revision-links-${projectId}`}>Supporting links (optional, one HTTPS URL per line)</label>
             <textarea className="filter-input dashboard-textarea" id={`revision-links-${projectId}`} maxLength={20480} value={reviewFeedbackLinks} onChange={(event) => setReviewFeedbackLinks(event.target.value)} />
             <label htmlFor={`revision-deadline-${projectId}`}>Revision deadline (optional)</label>
-            <input className="filter-input" id={`revision-deadline-${projectId}`} min={new Date(Date.now() + 60_000).toISOString().slice(0, 10)} onChange={(event) => setRevisionDeadline(event.target.value)} type="date" value={revisionDeadline} />
+            <input className="filter-input" id={`revision-deadline-${projectId}`} onChange={(event) => setRevisionDeadline(event.target.value)} type="date" value={revisionDeadline} />
             {isConfirmingApproval && <p className="form-hint" role="status">Approve this submission and mark the project complete? This does not release or transfer payment.</p>}
             <div className="project-submission-actions">
                 <button className="button button-primary" disabled={reviewing !== null} onClick={() => void reviewSubmission("approve")} type="button">{reviewing === "approve" ? "Approving..." : isConfirmingApproval ? "Confirm approval" : "Approve Submission"}</button>

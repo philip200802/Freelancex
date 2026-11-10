@@ -12,13 +12,15 @@ import PaymentTransaction from "@/models/PaymentTransaction";
 import Task from "@/models/Task";
 import User from "@/models/User";
 import mongoose from "mongoose";
-import { getProjectDeadlineCountdown } from "@/lib/project-deadline";
+import { getProjectDeadlineStatus } from "@/lib/project-deadline";
 
 const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 const statusLabels: Record<string, string> = {
     pending_approval: "Pending approval",
     awaiting_funding: "Awaiting funding",
     in_progress: "In progress",
+    cancelled: "Cancelled",
+    disputed: "Disputed",
 };
 
 function formatStatus(status: string) {
@@ -72,7 +74,7 @@ export default async function AdminJobDetailsPage({ params }: { params: Promise<
                     <div><dt>Category</dt><dd>{job.category}</dd></div>
                     <div><dt>Budget</dt><dd>{naira.format(job.amount)}</dd></div>
                     <div><dt>Accepted on</dt><dd>{job.projectStartedAt ? formatDate(job.projectStartedAt) : "Not accepted"}</dd></div>
-                    <div><dt>Deadline</dt><dd>{job.deadlineAt ? `${formatDate(job.deadlineAt)} · ${job.status === "completed" ? "Completed" : getProjectDeadlineCountdown(job.deadlineAt)}` : "Not set"}</dd></div>
+                    <div><dt>Deadline</dt><dd>{job.deadlineAt ? `${formatDate(job.deadlineAt)} · ${getProjectDeadlineStatus(job.deadlineAt, job.status)}` : "Not set"}</dd></div>
                     <div><dt>Date posted</dt><dd>{formatDate(job.createdAt)}</dd></div>
                     <div><dt>Last updated</dt><dd>{formatDate(job.updatedAt)}</dd></div>
                 </dl>

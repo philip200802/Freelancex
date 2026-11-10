@@ -13,6 +13,7 @@ import NotificationsList from "@/components/dashboard/NotificationsList";
 import PaymentsHistory from "@/components/dashboard/PaymentsHistory";
 import CreateProjectForm from "@/app/dashboard/employer/CreateProjectForm";
 import JobBoard from "@/app/jobs/JobBoard";
+import ProjectDeadlineCountdown from "@/components/projects/ProjectDeadlineCountdown";
 import { getCurrentUser } from "@/lib/current-user";
 import { connectToDatabase } from "@/lib/mongodb";
 import Task from "@/models/Task";
@@ -53,7 +54,9 @@ function TaskList({ jobs, emptyMessage, action, role }: { jobs: Array<{ _id: unk
     return <div className="dashboard-list">{jobs.map((job) => {
         const id = String(job._id);
         const href = role === "freelancer" ? `/freelancer/dashboard/projects/${id}` : `/client/dashboard/projects/${id}`;
-        return <Link className="dashboard-list-row" href={href} key={id}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span>{job.deadlineAt && <span>Deadline: {job.status === "completed" ? "Completed" : getProjectDeadlineCountdown(job.deadlineAt)}</span>}</div><span className={`status-badge status-${job.status}`}>{job.status.replaceAll("_", " ")}</span></Link>;
+        return <Link className="dashboard-list-row" href={href} key={id}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span>{role === "freelancer"
+            ? <ProjectDeadlineCountdown compact deadlineAt={job.deadlineAt} projectId={id} projectStatus={job.status} />
+            : job.deadlineAt && <span>Deadline: {job.status === "completed" ? "Completed" : getProjectDeadlineCountdown(job.deadlineAt)}</span>}</div><span className={`status-badge status-${job.status}`}>{job.status.replaceAll("_", " ")}</span></Link>;
     })}</div>;
 }
 

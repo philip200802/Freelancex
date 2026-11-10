@@ -11,6 +11,8 @@ const input = {
     task,
     employer,
     freelancer,
+    author: employer,
+    authorRole: "employer",
     reason: "work_quality",
     description: "The delivered work does not match the agreed scope.",
     evidenceLinks,
@@ -31,6 +33,16 @@ async function main() {
     assert.equal(dispute.history[0].authorRole, "employer");
     assert.deepEqual(dispute.history[0].attachments, evidenceLinks);
     assert.deepEqual(dispute.history[0].readBy.map(String), [employer.toString()]);
+
+    const freelancerOpening = buildDisputeOpeningDocument({
+        ...input,
+        author: freelancer,
+        authorRole: "freelancer",
+        authorName: "Project Freelancer",
+    });
+    assert.equal(freelancerOpening.history[0].authorRole, "freelancer");
+    assert.equal(freelancerOpening.history[0].author.toString(), freelancer.toString());
+    assert.deepEqual(freelancerOpening.history[0].readBy.map(String), [freelancer.toString()]);
 
     const invalidDispute = new Dispute({
         ...openingDocument,

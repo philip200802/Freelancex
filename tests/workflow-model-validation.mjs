@@ -5,6 +5,7 @@ import CancellationRequest from "../models/CancellationRequest.ts";
 import DeadlineExtensionRequest from "../models/DeadlineExtensionRequest.ts";
 import EmailOutbox from "../models/EmailOutbox.ts";
 import ProjectSubmission from "../models/ProjectSubmission.ts";
+import Task from "../models/Task.ts";
 
 async function main() {
     const queuedEmail = new EmailOutbox({
@@ -23,6 +24,8 @@ async function main() {
     await queuedEmail.validate();
     assert.equal(queuedEmail.status, "pending");
     assert.equal(queuedEmail.attempts, 0);
+    assert.ok(EmailOutbox.schema.indexes().some(([keys, options]) =>
+        keys.eventKey === 1 && options.unique && options.partialFilterExpression?.eventKey?.$type === "string"));
 
     const sentEmail = new EmailOutbox({
         type: "workflow_email",
@@ -80,6 +83,19 @@ async function main() {
         description: "Invalid reason.",
     });
     await assert.rejects(invalidCancellation.validate());
+    const disputedCancellation = new CancellationRequest({
+        task,
+        requestedBy: employer,
+        requestedTo: freelancer,
+        requesterRole: "employer",
+        reason: "changed_requirements",
+        description: "The cancellation request is now being handled through a dispute.",
+        status: "disputed",
+        disputedBy: freelancer,
+        disputedAt: new Date("2026-01-03T00:00:00.000Z"),
+        dispute: new mongoose.Types.ObjectId(),
+    });
+    await disputedCancellation.validate();
     assert.ok(CancellationRequest.schema.indexes().some(([keys, options]) =>
         keys.task === 1 && keys.status === 1 && options.unique && options.partialFilterExpression?.status === "pending"));
 
@@ -94,6 +110,8 @@ async function main() {
         reason: "Additional testing is required.",
     });
     await extension.validate();
+    assert.equal(extension.currentDeadline.toISOString(), "2026-01-10T00:00:00.000Z");
+    assert.equal(extension.proposedDeadline.toISOString(), "2026-01-24T00:00:00.000Z");
     const invalidExtension = new DeadlineExtensionRequest({
         task,
         employer,
@@ -123,7 +141,21 @@ async function main() {
     });
     await revision.validate();
 
-    console.log("Workflow model validation passed: outbox, bank-account snapshots, cancellation/extension request constraints, and revision metadata.");
+    const reminderTask = new Task({
+        title: "Reminder tracking",
+        description: "The reminder tracks the deadline already notified.",
+        amount: 100,
+        category: "Development",
+        duration: 7,
+        durationUnit: "days",
+        deadlineAt: new Date("2026-01-10T00:00:00.000Z"),
+        deadlineReminderSentFor: new Date("2026-01-10T00:00:00.000Z"),
+    });
+    await reminderTask.validate();
+    assert.equal(reminderTask.deadlineReminderSentFor?.getTime(), reminderTask.deadlineAt?.getTime());
+    assert.ok(Task.schema.indexes().some(([keys]) => keys.status === 1 && keys.deadlineAt === 1));
+
+    console.log("Workflow model validation passed: idempotent email key, persisted reminder tracking, bank-account snapshots, extension/cancellation constraints, and revision metadata.");
 }
 
 main().catch((error) => {

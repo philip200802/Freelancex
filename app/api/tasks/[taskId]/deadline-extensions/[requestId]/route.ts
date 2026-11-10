@@ -9,6 +9,7 @@ import Notification from "@/models/Notification";
 import Task from "@/models/Task";
 import User from "@/models/User";
 import { queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
+import { formatProjectDeadlineDateTime } from "@/lib/project-deadline";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +105,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                     type: "deadline_extension",
                     title: body.action === "approve" ? "Deadline extension approved" : "Deadline extension rejected",
                     body: body.action === "approve"
-                        ? `Your deadline extension for "${task.title}" was approved.`
+                        ? `Your deadline extension for "${task.title}" was approved. The new deadline is ${formatProjectDeadlineDateTime(extension.proposedDeadline)}.`
                         : `Your deadline extension for "${task.title}" was rejected; the original deadline remains unchanged.`,
                     relatedTask: task._id,
                     eventKey: `deadline-extension:${extension._id}:${body.action}`,
@@ -140,8 +141,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                     ? `The client approved additional time for "${projectTitle}".`
                     : `The client rejected your extension request for "${projectTitle}". The original deadline remains unchanged.`,
                 details: [
-                    { label: "Previous deadline", value: currentDeadline?.toLocaleDateString() || "" },
-                    { label: "Proposed deadline", value: proposedDeadline?.toLocaleDateString() || "" },
+                    { label: "Previous deadline", value: currentDeadline ? formatProjectDeadlineDateTime(currentDeadline) : "" },
+                    { label: "New deadline", value: proposedDeadline ? formatProjectDeadlineDateTime(proposedDeadline) : "" },
                     { label: "Client", value: client?.name || "Client" },
                 ],
                 actionPath: `/freelancer/dashboard/projects/${taskId}`,

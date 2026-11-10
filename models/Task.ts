@@ -16,6 +16,7 @@ export interface ITask extends Document {
     durationUnit: ProjectDurationUnit;
     projectStartedAt?: Date;
     deadlineAt?: Date;
+    deadlineReminderSentFor?: Date;
     commissionRatePercent?: number;
     grossAmountKobo?: number;
     commissionAmountKobo?: number;
@@ -44,6 +45,7 @@ const TaskSchema = new Schema<ITask>({
     durationUnit: { type: String, enum: ["days", "weeks"], required: true },
     projectStartedAt: { type: Date },
     deadlineAt: { type: Date },
+    deadlineReminderSentFor: { type: Date },
     commissionRatePercent: { type: Number, min: 0, max: 100 },
     grossAmountKobo: { type: Number, min: 1 },
     commissionAmountKobo: { type: Number, min: 0 },
@@ -76,7 +78,11 @@ if (cachedTaskModel) {
     if (!cachedTaskModel.schema.path("durationUnit")) missingTaskPaths.durationUnit = { type: String, enum: ["days", "weeks"], required: true };
     if (!cachedTaskModel.schema.path("projectStartedAt")) missingTaskPaths.projectStartedAt = { type: Date };
     if (!cachedTaskModel.schema.path("deadlineAt")) missingTaskPaths.deadlineAt = { type: Date };
+    if (!cachedTaskModel.schema.path("deadlineReminderSentFor")) missingTaskPaths.deadlineReminderSentFor = { type: Date };
     if (Object.keys(missingTaskPaths).length) cachedTaskModel.schema.add(missingTaskPaths);
 }
+
+const activeTaskSchema = cachedTaskModel?.schema || TaskSchema;
+activeTaskSchema.index({ status: 1, deadlineAt: 1 });
 
 export default cachedTaskModel || mongoose.model<ITask>("Task", TaskSchema);

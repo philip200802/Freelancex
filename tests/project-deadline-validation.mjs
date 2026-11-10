@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Task from "../models/Task.ts";
-import { createAcceptedProjectDeadline, getProjectDeadlineCountdown } from "../lib/project-deadline.ts";
+import { createAcceptedProjectDeadline, getProjectDeadlineCountdown, getProjectDeadlineCountdownParts, getProjectDeadlineStatus } from "../lib/project-deadline.ts";
 
 async function main() {
     const task = new Task({
@@ -22,6 +22,21 @@ async function main() {
     assert.equal(deadline.projectStartedAt.toISOString(), acceptanceDate.toISOString());
     assert.equal(deadline.deadlineAt.toISOString(), "2026-11-16T08:30:45.000Z");
     assert.equal(getProjectDeadlineCountdown(deadline.deadlineAt, acceptanceDate), "7 days remaining");
+    assert.equal(getProjectDeadlineStatus(deadline.deadlineAt, "completed", acceptanceDate), "Completed");
+    assert.equal(getProjectDeadlineStatus(deadline.deadlineAt, "cancelled", acceptanceDate), "Stopped — project cancelled");
+    assert.equal(getProjectDeadlineStatus(deadline.deadlineAt, "disputed", acceptanceDate), "Paused — dispute active");
+
+    const now = Date.parse("2026-11-15T08:30:45.000Z");
+    assert.deepEqual(
+        getProjectDeadlineCountdownParts(now + 24 * 60 * 60 * 1000, now),
+        { days: 1, hours: 0, minutes: 0, seconds: 0, isUrgent: false, isOverdue: false },
+    );
+    assert.ok(getProjectDeadlineCountdownParts(now + 23 * 60 * 60 * 1000, now)?.isUrgent);
+    assert.deepEqual(
+        getProjectDeadlineCountdownParts(now, now),
+        { days: 0, hours: 0, minutes: 0, seconds: 0, isUrgent: false, isOverdue: true },
+    );
+    assert.equal(getProjectDeadlineCountdownParts("invalid deadline", now), null);
 
     assert.equal(createAcceptedProjectDeadline({
         status: "awaiting_funding",
@@ -48,7 +63,7 @@ async function main() {
     });
     await assert.rejects(invalidTask.validate());
 
-    console.log("Project deadline validation passed: seven-day acceptance date calculation, no posting-time deadline, and no deadline reset.");
+    console.log("Project deadline validation passed: acceptance-date calculation, countdown boundaries, invalid dates, and no deadline reset.");
 }
 
 main().catch((error) => {

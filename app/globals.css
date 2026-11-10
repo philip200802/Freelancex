@@ -1826,6 +1826,33 @@ h3 {
     font-size: 12px;
 }
 
+.project-deadline-countdown {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.project-deadline-countdown > span {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.project-deadline-countdown > small {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.project-deadline-countdown-compact > strong {
+    color: var(--text);
+    font-size: 12px;
+}
+
+.project-deadline-countdown-urgent > span,
+.project-deadline-countdown-overdue > span {
+    color: #b42318;
+    font-weight: 700;
+}
+
 .client-jobs-dashboard {
     display: grid;
     gap: 20px;

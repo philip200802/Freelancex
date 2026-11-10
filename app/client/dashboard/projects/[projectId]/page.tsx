@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import ProjectSubmissions from "@/components/projects/ProjectSubmissions";
 import ProjectDispute from "@/components/projects/ProjectDispute";
 import ProjectManagementActions from "@/components/projects/ProjectManagementActions";
-import { formatProjectDuration, getProjectDeadlineCountdown } from "@/lib/project-deadline";
+import { formatProjectDuration, getProjectDeadlineStatus } from "@/lib/project-deadline";
 
 type Task = {
     id: string;
@@ -180,6 +180,10 @@ export default function ClientProjectPage() {
         ? "Submitted for Review"
         : task.status === "revision_requested"
             ? "Revision Requested"
+            : task.status === "cancelled"
+                ? "Cancelled"
+                : task.status === "disputed"
+                    ? "Disputed"
             : task.status.replace(/_/g, " ");
 
     return <main className="page-shell">
@@ -197,7 +201,7 @@ export default function ClientProjectPage() {
                         <div className="dashboard-list-row"><div><strong>Freelancer</strong><span>{task.freelancer?.name || "Awaiting assignment"}</span></div></div>
                         {task.duration && task.durationUnit && <div className="dashboard-list-row"><div><strong>Delivery time</strong><span>{formatProjectDuration(task.duration, task.durationUnit)}</span></div></div>}
                         {task.projectStartedAt && <div className="dashboard-list-row"><div><strong>Accepted on</strong><span>{new Date(task.projectStartedAt).toLocaleDateString()}</span></div></div>}
-                        {task.deadlineAt && <div className="dashboard-list-row"><div><strong>Deadline</strong><span>{new Date(task.deadlineAt).toLocaleDateString()} · {task.status === "completed" ? "Completed" : getProjectDeadlineCountdown(task.deadlineAt)}</span></div></div>}
+                        {task.deadlineAt && <div className="dashboard-list-row"><div><strong>Deadline</strong><span>{new Date(task.deadlineAt).toLocaleDateString()} · {getProjectDeadlineStatus(task.deadlineAt, task.status)}</span></div></div>}
                         {task.freelancer && <div className="dashboard-list-row"><div><strong>Work status</strong><span>{statusLabel}</span></div></div>}
                         {task.funding && <div className="dashboard-list-row"><div><strong>Funding</strong><span>Confirmed · {money.format(task.funding.amount)}{task.funding.verifiedAt ? ` · ${new Date(task.funding.verifiedAt).toLocaleDateString()}` : ""}</span></div></div>}
                     </div>

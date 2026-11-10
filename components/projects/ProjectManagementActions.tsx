@@ -9,7 +9,7 @@ type CancellationEntry = {
     reason: string;
     description: string;
     evidenceLinks: string[];
-    status: "pending" | "accepted" | "rejected";
+    status: "pending" | "accepted" | "rejected" | "disputed";
     createdAt: string;
 };
 type ExtensionEntry = {
@@ -193,7 +193,7 @@ export default function ProjectManagementActions({
                 <label>Supporting links (optional, HTTPS URLs one per line)<textarea className="filter-input dashboard-textarea" maxLength={20480} onChange={(event) => setEvidenceLinks(event.target.value)} value={evidenceLinks} /></label>
                 <button className="button button-quiet" disabled={busy || !description.trim()} type="submit">{busy ? "Sending..." : "Send cancellation request"}</button>
             </form>}
-            {role === "freelancer" && projectStatus === "in_progress" && !activeExtension && <form className="dashboard-form" onSubmit={(event) => void requestExtension(event)}>
+            {role === "freelancer" && ["funded", "in_progress", "revision_requested"].includes(projectStatus) && !activeExtension && <form className="dashboard-form" onSubmit={(event) => void requestExtension(event)}>
                 <h3>Request deadline extension</h3>
                 <label>Additional time<input className="filter-input" max={extensionUnit === "weeks" ? "520" : "3650"} min="1" onChange={(event) => setExtensionDuration(event.target.value)} required step="1" type="number" value={extensionDuration} /></label>
                 <label>Unit<select className="filter-input" onChange={(event) => setExtensionUnit(event.target.value as "days" | "weeks")} value={extensionUnit}><option value="days">Days</option><option value="weeks">Weeks</option></select></label>

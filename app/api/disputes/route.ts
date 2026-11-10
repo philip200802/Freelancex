@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { getCurrentUser } from "@/lib/current-user";
+import CancellationRequest from "@/models/CancellationRequest";
 import Dispute, { buildDisputeOpeningDocument, disputeReasons, type DisputeReason, type IDispute } from "@/models/Dispute";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import Task from "@/models/Task";
@@ -249,7 +250,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     const currentUser = await getCurrentUser();
     if (!currentUser) return jsonNoStore({ error: "Authentication required." }, { status: 401 });
-    if (currentUser.role !== "employer") return jsonNoStore({ error: "Only the project client can open a dispute." }, { status: 403 });
+    if (currentUser.role !== "employer" && currentUser.role !== "freelancer") {
+        return jsonNoStore({ error: "Only project participants can open a dispute." }, { status: 403 });
+    }
 
     let parsedBody: unknown;
     try {
@@ -273,15 +276,18 @@ export async function POST(request: Request) {
     try {
         await connectToDatabase();
         operation = "load eligible project";
+        const participantField = currentUser.role === "employer" ? "employer" : "freelancer";
         const task = await Task.findOne({
             _id: projectId,
-            employer: currentUser.userId,
+            [participantField]: currentUser.userId,
             isDeleted: { $ne: true },
         }).select("_id title employer freelancer status").lean();
         if (!task) return jsonNoStore({ error: "Project not found." }, { status: 404 });
-        if (!task.freelancer || !eligibleProjectStatuses.includes(task.status)) {
+        if (!task.employer || !task.freelancer || !eligibleProjectStatuses.includes(task.status)) {
             return jsonNoStore({ error: "A dispute can only be opened for an assigned project with work in progress, submitted or completed." }, { status: 409 });
         }
+        const author = currentUser.role === "employer" ? task.employer : task.freelancer;
+        const authorRole = currentUser.role === "employer" ? "employer" : "freelancer";
         operation = "check for active dispute";
         if (await Dispute.exists({ task: projectId, status: { $in: activeStatuses } })) {
             return jsonNoStore({ error: "This project already has an active dispute." }, { status: 409 });
@@ -300,7 +306,7 @@ export async function POST(request: Request) {
                 const updatedTask = await Task.findOneAndUpdate(
                     {
                         _id: projectId,
-                        employer: currentUser.userId,
+                        employer: task.employer,
                         freelancer: task.freelancer,
                         status: task.status,
                         isDeleted: { $ne: true },
@@ -316,16 +322,54 @@ export async function POST(request: Request) {
                     task: updatedTask._id,
                     employer: updatedTask.employer,
                     freelancer: updatedTask.freelancer,
+                    author,
+                    authorRole,
                     reason: reason as DisputeReason,
                     description,
                     evidenceLinks,
                     projectStatusBeforeDispute: task.status,
                     entryId: randomUUID(),
-                    authorName: opener?.name || "Client",
+                    authorName: opener?.name || (authorRole === "employer" ? "Client" : "Freelancer"),
                     createdAt: new Date(),
                 })], { session });
                 disputeId = dispute.id;
                 createdDispute = dispute;
+                operation = "mark pending cancellation disputed";
+                const cancellation = await CancellationRequest.findOneAndUpdate(
+                    { task: updatedTask._id, status: "pending" },
+                    { $set: {
+                        status: "disputed",
+                        disputedBy: currentUser.userId,
+                        disputedAt: dispute.createdAt,
+                        dispute: dispute._id,
+                    } },
+                    { returnDocument: "after", session },
+                );
+                if (cancellation) {
+                    for (const recipient of [
+                        { id: updatedTask.employer, role: "employer" as const },
+                        { id: updatedTask.freelancer, role: "freelancer" as const },
+                    ]) {
+                        await Notification.updateOne(
+                            { recipient: recipient.id, eventKey: `cancellation:${cancellation._id}:disputed:${recipient.id}` },
+                            { $setOnInsert: {
+                                recipient: recipient.id,
+                                recipientRole: recipient.role,
+                                actor: currentUser.userId,
+                                type: "project_cancellation",
+                                title: "Cancellation request moved to dispute",
+                                body: `The cancellation request for "${task.title}" is now being handled through the project dispute.`,
+                                relatedTask: task._id,
+                                relatedDispute: dispute._id,
+                                eventKey: `cancellation:${cancellation._id}:disputed:${recipient.id}`,
+                                href: recipient.role === "employer"
+                                    ? `/client/dashboard/disputes?disputeId=${dispute._id}`
+                                    : `/freelancer/dashboard/disputes?disputeId=${dispute._id}`,
+                            } },
+                            { upsert: true, session },
+                        );
+                    }
+                }
                 operation = "create participant dispute notifications";
                 await Notification.create([
                     {

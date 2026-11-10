@@ -3,13 +3,13 @@ import mongoose, { Document, Schema } from "mongoose";
 export type NotificationType =
     | "job_created" | "job_cancelled" | "job_deleted" | "application" | "application_accepted" | "application_rejected"
     | "message" | "payment_funded" | "project_funded" | "project_completed" | "payout_recorded" | "submission" | "deliverable_submitted"
-    | "admin_submission" | "submission_approved" | "revision_requested" | "revision_overdue" | "project_cancellation" | "deadline_extension" | "deadline_approaching" | "payout_pending" | "payout_blocked" | "payout_failed"
+    | "admin_submission" | "submission_approved" | "revision_requested" | "revision_overdue" | "project_cancellation" | "deadline_extension" | "deadline_approaching" | "project_overdue" | "payout_pending" | "payout_blocked" | "payout_failed"
     | "dispute_opened" | "dispute_acknowledged" | "dispute_status_changed" | "dispute_evidence_requested" | "dispute_evidence_submitted" | "dispute_updated" | "dispute_resolved" | "dispute_message" | "dispute_closed" | "dispute_reopened" | "dispute_escalated" | "admin_dispute" | "account" | "account_removed" | "system";
 
 export const notificationTypes: NotificationType[] = [
     "job_created", "job_cancelled", "job_deleted", "application", "application_accepted", "application_rejected",
     "message", "payment_funded", "project_funded", "project_completed", "payout_recorded", "submission", "deliverable_submitted",
-    "admin_submission", "submission_approved", "revision_requested", "revision_overdue", "project_cancellation", "deadline_extension", "deadline_approaching", "payout_pending", "payout_blocked", "payout_failed",
+    "admin_submission", "submission_approved", "revision_requested", "revision_overdue", "project_cancellation", "deadline_extension", "deadline_approaching", "project_overdue", "payout_pending", "payout_blocked", "payout_failed",
     "dispute_opened", "dispute_acknowledged", "dispute_status_changed", "dispute_evidence_requested", "dispute_evidence_submitted", "dispute_updated", "dispute_resolved", "dispute_message", "dispute_closed", "dispute_reopened", "dispute_escalated", "admin_dispute", "account", "account_removed", "system",
 ];
 

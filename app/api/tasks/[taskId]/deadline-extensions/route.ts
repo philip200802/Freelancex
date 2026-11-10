@@ -9,10 +9,9 @@ import Notification from "@/models/Notification";
 import Task from "@/models/Task";
 import User from "@/models/User";
 import { queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
-import { calculateExtendedDeadline } from "@/lib/project-deadline";
+import { calculateExtendedDeadline, formatProjectDeadlineDateTime, formatProjectDuration } from "@/lib/project-deadline";
 
 export const dynamic = "force-dynamic";
-const millisecondsPerDay = 24 * 60 * 60 * 1000;
 
 function jsonNoStore(body: unknown, init?: ResponseInit) {
     const response = NextResponse.json(body, init);
@@ -89,6 +88,7 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
     let extensionId = "";
     let employerId = "";
     let projectTitle = "";
+    let currentDeadline: Date | undefined;
     let proposedDeadline: Date | undefined;
     try {
         await session.withTransaction(async () => {
@@ -114,6 +114,7 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
             extensionId = extension.id;
             employerId = task.employer.toString();
             projectTitle = task.title;
+            currentDeadline = deadline;
             await Notification.updateOne(
                 { recipient: task.employer, eventKey: `deadline-extension:${extension._id}:requested` },
                 { $setOnInsert: {
@@ -155,12 +156,15 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
             dedupeKey: `deadline-extension:${extensionId}:requested`,
             recipient: client,
             email: {
-                subject: "Deadline extension requested for your FreelanceX project",
+                subject: "Freelancer Requested a Deadline Extension – FreelanceX",
                 heading: "Deadline extension requested",
                 message: `${freelancer?.name || "Your freelancer"} requested additional time for "${projectTitle}".`,
                 details: [
-                    { label: "Current deadline", value: new Date(proposedDeadline.getTime() - durationDays * millisecondsPerDay).toLocaleDateString() },
-                    { label: "Proposed deadline", value: proposedDeadline.toLocaleDateString() },
+                    { label: "Project", value: projectTitle },
+                    { label: "Freelancer", value: freelancer?.name || "Your freelancer" },
+                    { label: "Current deadline", value: currentDeadline ? formatProjectDeadlineDateTime(currentDeadline) : "Unavailable" },
+                    { label: "Additional duration", value: formatProjectDuration(duration, durationUnit) },
+                    { label: "Proposed deadline", value: formatProjectDeadlineDateTime(proposedDeadline) },
                     { label: "Reason", value: reason },
                 ],
                 actionPath: `/client/dashboard/projects/${taskId}`,

@@ -8,7 +8,7 @@ import FreelancerProfile from "@/models/FreelancerProfile";
 import Notification from "@/models/Notification";
 import Task from "@/models/Task";
 import User from "@/models/User";
-import { getProjectDeadlineCountdown } from "@/lib/project-deadline";
+import ProjectDeadlineCountdown from "@/components/projects/ProjectDeadlineCountdown";
 
 const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 const activeTaskStatuses = ["awaiting_funding", "funded", "in_progress", "submitted", "revision_requested"];
@@ -116,7 +116,7 @@ export default async function FreelancerDashboard() {
         <div className="dashboard-two-column">
             <section className="dashboard-panel">
                 <div className="dashboard-panel-heading"><div><span className="panel-kicker">Your work</span><h2>Active projects</h2></div><Link className="text-link" href="/freelancer/dashboard/contracts">View all</Link></div>
-                {activeContracts.length ? <div className="dashboard-list">{activeContracts.map((contract) => <Link className="dashboard-list-row" href={`/freelancer/dashboard/projects/${String(contract._id)}`} key={String(contract._id)}><div><strong>{contract.title}</strong><span>{contract.category} &middot; {naira.format(contract.amount)}{contract.status === "funded" ? " · Funding confirmed — work can begin" : ""}</span>{contract.deadlineAt && <span>Deadline {contract.deadlineAt.toLocaleDateString()} · {getProjectDeadlineCountdown(contract.deadlineAt)}</span>}</div><span className={`status-badge status-${contract.status}`}>{contract.status === "funded" ? "Funded" : contract.status.replaceAll("_", " ")}</span></Link>)}</div> : <div className="dashboard-empty"><strong>No active projects yet.</strong><p>Explore open projects and find work that fits your strengths.</p><Link className="button button-primary" href="/freelancer/dashboard/jobs">Find jobs</Link></div>}
+                {activeContracts.length ? <div className="dashboard-list">{activeContracts.map((contract) => <Link className="dashboard-list-row" href={`/freelancer/dashboard/projects/${String(contract._id)}`} key={String(contract._id)}><div><strong>{contract.title}</strong><span>{contract.category} &middot; {naira.format(contract.amount)}{contract.status === "funded" ? " · Funding confirmed — work can begin" : ""}</span><ProjectDeadlineCountdown compact deadlineAt={contract.deadlineAt} projectId={String(contract._id)} projectStatus={contract.status} /></div><span className={`status-badge status-${contract.status}`}>{contract.status === "funded" ? "Funded" : contract.status.replaceAll("_", " ")}</span></Link>)}</div> : <div className="dashboard-empty"><strong>No active projects yet.</strong><p>Explore open projects and find work that fits your strengths.</p><Link className="button button-primary" href="/freelancer/dashboard/jobs">Find jobs</Link></div>}
             </section>
             <section className="dashboard-panel">
                 <div className="dashboard-panel-heading"><div><span className="panel-kicker">Picked for you</span><h2>Recommended opportunities</h2></div><Link className="text-link" href="/freelancer/dashboard/jobs">Browse all</Link></div>

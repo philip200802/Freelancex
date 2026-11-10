@@ -30,6 +30,8 @@ export interface DisputeOpeningInput {
     task: mongoose.Types.ObjectId;
     employer: mongoose.Types.ObjectId;
     freelancer: mongoose.Types.ObjectId;
+    author: mongoose.Types.ObjectId;
+    authorRole: "employer" | "freelancer";
     reason: DisputeReason;
     description: string;
     evidenceLinks: string[];
@@ -51,12 +53,12 @@ export function buildDisputeOpeningDocument(input: DisputeOpeningInput) {
         projectStatusBeforeDispute: input.projectStatusBeforeDispute,
         history: [{
             entryId: input.entryId,
-            author: input.employer,
-            authorRole: "employer" as const,
+            author: input.author,
+            authorRole: input.authorRole,
             authorName: input.authorName,
             message: input.description,
             attachments: input.evidenceLinks,
-            readBy: [input.employer],
+            readBy: [input.author],
             createdAt: input.createdAt,
         }],
     };

@@ -80,6 +80,9 @@ export async function GET(_request: Request, context: { params: Promise<{ taskId
                 evidenceLinks: request.evidenceLinks,
                 status: request.status,
                 resolvedAt: request.resolvedAt,
+                disputedBy: request.disputedBy?.toString(),
+                disputedAt: request.disputedAt,
+                dispute: request.dispute?.toString(),
                 createdAt: request.createdAt,
             })),
         });

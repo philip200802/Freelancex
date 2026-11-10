@@ -10,7 +10,7 @@ export const cancellationReasons = [
     "other",
 ] as const;
 export type CancellationReason = typeof cancellationReasons[number];
-export type CancellationRequestStatus = "pending" | "accepted" | "rejected";
+export type CancellationRequestStatus = "pending" | "accepted" | "rejected" | "disputed";
 
 export interface ICancellationRequest extends Document {
     task: mongoose.Types.ObjectId;
@@ -23,6 +23,9 @@ export interface ICancellationRequest extends Document {
     status: CancellationRequestStatus;
     resolvedBy?: mongoose.Types.ObjectId;
     resolvedAt?: Date;
+    disputedBy?: mongoose.Types.ObjectId;
+    disputedAt?: Date;
+    dispute?: mongoose.Types.ObjectId;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -39,9 +42,12 @@ const CancellationRequestSchema = new Schema<ICancellationRequest>({
         default: [],
         validate: { validator: (links: unknown[]) => links.length <= 10, message: "A cancellation request can include up to ten evidence links." },
     },
-    status: { type: String, enum: ["pending", "accepted", "rejected"], required: true, default: "pending" },
+    status: { type: String, enum: ["pending", "accepted", "rejected", "disputed"], required: true, default: "pending" },
     resolvedBy: { type: Schema.Types.ObjectId, ref: "User" },
     resolvedAt: { type: Date },
+    disputedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    disputedAt: { type: Date },
+    dispute: { type: Schema.Types.ObjectId, ref: "Dispute" },
 }, { timestamps: true });
 
 CancellationRequestSchema.index(

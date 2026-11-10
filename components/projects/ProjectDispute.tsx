@@ -140,7 +140,8 @@ export default function ProjectDispute({ projectId, projectStatus, role }: Proje
     }
 
     const isActive = dispute && dispute.status !== "resolved" && dispute.status !== "closed";
-    const canOpen = role === "employer" && ["funded", "in_progress", "submitted", "revision_requested", "completed"].includes(projectStatus);
+    const canOpen = (role === "employer" || role === "freelancer") &&
+        ["funded", "in_progress", "submitted", "revision_requested", "completed"].includes(projectStatus);
 
     return <section className="dashboard-panel project-dispute">
         <div className="dashboard-panel-heading"><div><span className="panel-kicker">Project support</span><h2>Dispute</h2></div>{dispute && <span className={`status-badge status-${dispute.status}`}>{statusLabels[dispute.status]}</span>}</div>

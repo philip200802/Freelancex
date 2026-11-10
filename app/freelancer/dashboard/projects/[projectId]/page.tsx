@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import ProjectSubmissions from "@/components/projects/ProjectSubmissions";
 import ProjectDispute from "@/components/projects/ProjectDispute";
 import ProjectManagementActions from "@/components/projects/ProjectManagementActions";
-import { getProjectDeadlineCountdown } from "@/lib/project-deadline";
+import ProjectDeadlineCountdown from "@/components/projects/ProjectDeadlineCountdown";
 
 type Task = {
     id: string;
@@ -84,8 +84,10 @@ export default function FreelancerProjectPage() {
         submitted: "Submitted for Review",
         revision_requested: "Revision Requested",
         completed: "Completed",
+        cancelled: "Cancelled",
+        disputed: "Disputed",
     };
-    const fundingConfirmed = ["funded", "in_progress", "submitted", "revision_requested", "completed", "disputed"].includes(task.status);
+    const fundingConfirmed = ["funded", "in_progress", "submitted", "revision_requested", "completed", "disputed", "cancelled"].includes(task.status);
 
     return <main className="page-shell">
         <header className="site-header"><Link className="logo" href="/"><span className="logo-mark" />FreelanceX</Link><Link className="button button-quiet" href="/freelancer/dashboard">Back to dashboard</Link></header>
@@ -102,7 +104,7 @@ export default function FreelancerProjectPage() {
                         <div className="dashboard-list-row"><div><strong>Budget</strong><span>{money.format(task.amount)}</span></div></div>
                         {fundingConfirmed && <div className="dashboard-list-row"><div><strong>Funding</strong><span>Confirmed · {money.format(task.funding?.amount ?? task.amount)}{task.funding?.verifiedAt ? ` · ${new Date(task.funding.verifiedAt).toLocaleDateString()}` : ""}</span></div></div>}
                         {task.projectStartedAt && <div className="dashboard-list-row"><div><strong>Accepted on</strong><span>{new Date(task.projectStartedAt).toLocaleDateString()}</span></div></div>}
-                        {task.deadlineAt && <div className="dashboard-list-row"><div><strong>Deadline</strong><span>{new Date(task.deadlineAt).toLocaleDateString()} · {task.status === "completed" ? "Completed" : getProjectDeadlineCountdown(task.deadlineAt)}</span></div></div>}
+                        <div className="dashboard-list-row"><ProjectDeadlineCountdown deadlineAt={task.deadlineAt} projectId={task.id} projectStatus={task.status} /></div>
                     </div>
                 </article>
                 <aside className="detail-aside">

@@ -5,7 +5,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { processProfileImageCleanup } from "@/lib/profile-image-cleanup";
 import { processWorkflowEmailOutbox } from "@/lib/workflow-email";
 import { queueOverdueManualPayoutEmails } from "@/lib/payout-email-outbox";
-import { notifyApproachingProjectDeadlines, notifyOverdueProjectRevisions } from "@/lib/project-deadline-notifications";
+import { notifyApproachingProjectDeadlines, notifyOverdueProjectDeadlines, notifyOverdueProjectRevisions, queueUpcomingProjectDeadlineReminderEmails } from "@/lib/project-deadline-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -21,14 +21,16 @@ async function processOutbox(request: Request) {
     try {
         await connectToDatabase();
         const overduePayoutEmails = await queueOverdueManualPayoutEmails(50);
-        const [emails, workflowEmails, profileImages, overdueRevisionNotifications, approachingDeadlineNotifications] = await Promise.all([
+        const deadlineReminderEmailsQueued = await queueUpcomingProjectDeadlineReminderEmails(100);
+        const [emails, workflowEmails, profileImages, overdueRevisionNotifications, approachingDeadlineNotifications, overdueProjectNotifications] = await Promise.all([
             processAccountRemovalEmails(50),
             processWorkflowEmailOutbox(50),
             processProfileImageCleanup(50),
             notifyOverdueProjectRevisions(50),
             notifyApproachingProjectDeadlines(100),
+            notifyOverdueProjectDeadlines(100),
         ]);
-        return NextResponse.json({ success: true, emails, workflowEmails, overduePayoutEmailsQueued: overduePayoutEmails.length, overdueRevisionNotifications, approachingDeadlineNotifications, profileImages }, { headers: { "Cache-Control": "no-store" } });
+        return NextResponse.json({ success: true, emails, workflowEmails, overduePayoutEmailsQueued: overduePayoutEmails.length, deadlineReminderEmailsQueued, overdueRevisionNotifications, approachingDeadlineNotifications, overdueProjectNotifications, profileImages }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
         console.error("Email outbox processing failed:", error);
         return NextResponse.json({ error: "Email outbox could not be processed." }, { status: 503 });
