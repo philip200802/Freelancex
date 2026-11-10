@@ -9,6 +9,8 @@ type Job = {
     description: string;
     category: string;
     budget: number;
+    duration: number;
+    durationUnit: "days" | "weeks";
     posted: string;
     employer: { id: string | null; name: string } | null;
 };
@@ -38,7 +40,7 @@ export default function JobBoard({ detailsHrefPrefix = "/jobs/" }: { detailsHref
                 if (maximum !== "Any budget") params.set("maxBudget", maximum);
                 const response = await fetch(`/api/tasks?${params.toString()}`, { cache: "no-store", signal: controller.signal });
                 const result = await response.json() as {
-                    tasks?: Array<{ _id: string; title: string; description: string; amount: number; category: string; createdAt: string; employer?: { id: string | null; name: string } | null }>;
+                    tasks?: Array<{ _id: string; title: string; description: string; amount: number; duration: number; durationUnit: "days" | "weeks"; category: string; createdAt: string; employer?: { id: string | null; name: string } | null }>;
                     pagination?: JobPagination;
                     error?: string;
                 };
@@ -52,6 +54,8 @@ export default function JobBoard({ detailsHrefPrefix = "/jobs/" }: { detailsHref
                     description: task.description,
                     category: task.category === "Design" ? "Design & Brand" : task.category === "Writing" ? "Writing & Content" : task.category,
                     budget: task.amount,
+                    duration: task.duration,
+                    durationUnit: task.durationUnit,
                     posted: new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(Math.round((new Date(task.createdAt).getTime() - Date.now()) / 86400000), "day"),
                     employer: task.employer || null,
                 })));

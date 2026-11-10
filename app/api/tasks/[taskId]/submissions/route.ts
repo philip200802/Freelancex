@@ -32,6 +32,8 @@ function publicSubmission(submission: {
     links: string[];
     status: string;
     feedback?: string;
+    feedbackLinks?: string[];
+    revisionDeadline?: Date;
     reviewedAt?: Date;
     submittedAt: Date;
     createdAt: Date;
@@ -44,6 +46,8 @@ function publicSubmission(submission: {
         links: submission.links,
         status: submission.status,
         feedback: submission.feedback,
+        feedbackLinks: submission.feedbackLinks,
+        revisionDeadline: submission.revisionDeadline,
         reviewedAt: submission.reviewedAt,
         submittedAt: submission.submittedAt,
         createdAt: submission.createdAt,
@@ -197,9 +201,10 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
     try {
         await connectToDatabase();
         const task = await Task.findOne({ _id: taskId, freelancer: user.userId })
-            .select("title amount employer freelancer freelancerNameSnapshot status grossAmountKobo commissionRatePercent commissionAmountKobo freelancerNetAmountKobo")
+            .select("title amount employer freelancer freelancerNameSnapshot status isDeleted grossAmountKobo commissionRatePercent commissionAmountKobo freelancerNetAmountKobo")
             .lean();
         if (!task) return jsonNoStore({ error: "Project not found." }, { status: 404 });
+        if (task.isDeleted || task.status === "cancelled") return jsonNoStore({ error: "Cancelled or archived projects cannot receive new submissions." }, { status: 409 });
         if (!task.employer) return jsonNoStore({ error: "This project has no employer available to review a submission." }, { status: 409 });
         const commission = resolveCommission(task.amount, {
             grossAmountKobo: task.grossAmountKobo,

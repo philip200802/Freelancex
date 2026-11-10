@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import type { ProjectDurationUnit } from "@/lib/project-deadline";
 
 export type TaskCategory = "Development" | "Design" | "Writing" | "Marketing";
 export type TaskStatus = "pending_approval" | "open" | "awaiting_funding" | "funded" | "in_progress" | "submitted" | "revision_requested" | "completed" | "disputed" | "cancelled";
@@ -11,6 +12,10 @@ export interface ITask extends Document {
     title: string;
     description: string;
     amount: number;
+    duration: number;
+    durationUnit: ProjectDurationUnit;
+    projectStartedAt?: Date;
+    deadlineAt?: Date;
     commissionRatePercent?: number;
     grossAmountKobo?: number;
     commissionAmountKobo?: number;
@@ -35,6 +40,10 @@ const TaskSchema = new Schema<ITask>({
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true, trim: true },
     amount: { type: Number, required: true, min: 1 },
+    duration: { type: Number, required: true, min: 1, max: 3650, validate: Number.isSafeInteger },
+    durationUnit: { type: String, enum: ["days", "weeks"], required: true },
+    projectStartedAt: { type: Date },
+    deadlineAt: { type: Date },
     commissionRatePercent: { type: Number, min: 0, max: 100 },
     grossAmountKobo: { type: Number, min: 1 },
     commissionAmountKobo: { type: Number, min: 0 },
@@ -63,6 +72,10 @@ if (cachedTaskModel) {
     if (!cachedTaskModel.schema.path("commissionAmountKobo")) missingTaskPaths.commissionAmountKobo = { type: Number, min: 0 };
     if (!cachedTaskModel.schema.path("freelancerNetAmountKobo")) missingTaskPaths.freelancerNetAmountKobo = { type: Number, min: 0 };
     if (!cachedTaskModel.schema.path("payoutStatus")) missingTaskPaths.payoutStatus = { type: String, enum: ["pending", "completed", "failed"] };
+    if (!cachedTaskModel.schema.path("duration")) missingTaskPaths.duration = { type: Number, required: true, min: 1, max: 3650, validate: Number.isSafeInteger };
+    if (!cachedTaskModel.schema.path("durationUnit")) missingTaskPaths.durationUnit = { type: String, enum: ["days", "weeks"], required: true };
+    if (!cachedTaskModel.schema.path("projectStartedAt")) missingTaskPaths.projectStartedAt = { type: Date };
+    if (!cachedTaskModel.schema.path("deadlineAt")) missingTaskPaths.deadlineAt = { type: Date };
     if (Object.keys(missingTaskPaths).length) cachedTaskModel.schema.add(missingTaskPaths);
 }
 

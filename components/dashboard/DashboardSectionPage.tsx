@@ -17,6 +17,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { connectToDatabase } from "@/lib/mongodb";
 import Task from "@/models/Task";
 import User from "@/models/User";
+import { getProjectDeadlineCountdown } from "@/lib/project-deadline";
 
 const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 
@@ -47,12 +48,12 @@ function EmptyPanel({ title, message, action }: { title: string; message: string
     return <div className="dashboard-empty"><strong>{title}</strong><p>{message}</p>{action && <Link className="button button-primary" href={action.href}>{action.label}</Link>}</div>;
 }
 
-function TaskList({ jobs, emptyMessage, action, role }: { jobs: Array<{ _id: unknown; title: string; category: string; amount: number; status: string }>; emptyMessage: string; action?: { label: string; href: string }; role: DashboardRole }) {
+function TaskList({ jobs, emptyMessage, action, role }: { jobs: Array<{ _id: unknown; title: string; category: string; amount: number; status: string; deadlineAt?: Date | string }>; emptyMessage: string; action?: { label: string; href: string }; role: DashboardRole }) {
     if (!jobs.length) return <EmptyPanel title="No projects to show yet." message={emptyMessage} action={action} />;
     return <div className="dashboard-list">{jobs.map((job) => {
         const id = String(job._id);
         const href = role === "freelancer" ? `/freelancer/dashboard/projects/${id}` : `/client/dashboard/projects/${id}`;
-        return <Link className="dashboard-list-row" href={href} key={id}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span></div><span className={`status-badge status-${job.status}`}>{job.status.replace("_", " ")}</span></Link>;
+        return <Link className="dashboard-list-row" href={href} key={id}><div><strong>{job.title}</strong><span>{job.category} &middot; {naira.format(job.amount)}</span>{job.deadlineAt && <span>Deadline: {job.status === "completed" ? "Completed" : getProjectDeadlineCountdown(job.deadlineAt)}</span>}</div><span className={`status-badge status-${job.status}`}>{job.status.replaceAll("_", " ")}</span></Link>;
     })}</div>;
 }
 

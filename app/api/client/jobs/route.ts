@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { connectToDatabase } from "@/lib/mongodb";
 import Application from "@/models/Application";
 import Task from "@/models/Task";
+import { formatProjectDuration } from "@/lib/project-deadline";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
 
         const [jobs, totalCount, activeCount] = await Promise.all([
             Task.find(filter)
-                .select("_id title description category amount status applicationCount createdAt")
+                .select("_id title description category amount duration durationUnit projectStartedAt deadlineAt status applicationCount createdAt")
                 .sort({ createdAt: -1, _id: -1 })
                 .skip((page - 1) * pageSize)
                 .limit(pageSize)
@@ -66,6 +67,9 @@ export async function GET(request: Request) {
                 description: job.description,
                 category: job.category,
                 amount: job.amount,
+                deliveryTime: job.duration && job.durationUnit ? formatProjectDuration(job.duration, job.durationUnit) : null,
+                projectStartedAt: job.projectStartedAt,
+                deadlineAt: job.deadlineAt,
                 status: job.status,
                 applications: countsByTask.get(job._id.toString()) || job.applicationCount || 0,
                 createdAt: job.createdAt,

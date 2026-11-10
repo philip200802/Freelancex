@@ -8,6 +8,7 @@ import Notification from "@/models/Notification";
 import Task from "@/models/Task";
 import User from "@/models/User";
 import { queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
+import { createAcceptedProjectDeadline } from "@/lib/project-deadline";
 
 export const dynamic = "force-dynamic";
 
@@ -78,17 +79,19 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
 
         try {
             await connectToDatabase();
-            const task = await Task.findOne({ _id: taskId, employer: user.userId, status: "pending_approval", isDeleted: { $ne: true } }).select("employer freelancer title").lean();
+            const task = await Task.findOne({ _id: taskId, employer: user.userId, status: "pending_approval", isDeleted: { $ne: true } }).select("employer freelancer title status duration durationUnit projectStartedAt deadlineAt").lean();
             if (!task?.freelancer) return jsonNoStore({ error: "Pending application not found." }, { status: 404 });
             const rejectedFreelancerIds: unknown[] = [];
 
             if (legacyBody.action === "accept") {
+                const deadlineFields = createAcceptedProjectDeadline(task, new Date());
+                if (!deadlineFields) return jsonNoStore({ error: "This application has already been updated." }, { status: 409 });
                 const session = await mongoose.startSession();
                 try {
                     await session.withTransaction(async () => {
                         const updatedTask = await Task.findOneAndUpdate(
-                            { _id: taskId, employer: user.userId, status: "pending_approval", isDeleted: { $ne: true }, freelancer: task.freelancer },
-                            { status: "awaiting_funding" },
+                            { _id: taskId, employer: user.userId, status: "pending_approval", isDeleted: { $ne: true }, freelancer: task.freelancer, projectStartedAt: { $exists: false }, deadlineAt: { $exists: false } },
+                            { $set: { status: "awaiting_funding", ...deadlineFields } },
                             { returnDocument: "after", session },
                         );
                         if (!updatedTask) throw new Error("APPLICATION_CHANGED");
@@ -235,12 +238,22 @@ export async function PATCH(request: Request, context: { params: Promise<{ appli
         const rejectedFreelancerIds: unknown[] = [];
 
         if (body.action === "accept") {
+            const taskForAcceptance = await Task.findOne({
+                _id: application.task,
+                employer: user.userId,
+                status: "open",
+                isDeleted: { $ne: true },
+                $or: [{ freelancer: { $exists: false } }, { freelancer: null }],
+            }).select("status duration durationUnit projectStartedAt deadlineAt").lean();
+            if (!taskForAcceptance) return jsonNoStore({ error: "This job is no longer available to accept." }, { status: 409 });
+            const deadlineFields = createAcceptedProjectDeadline(taskForAcceptance, new Date());
+            if (!deadlineFields) return jsonNoStore({ error: "This job is no longer available to accept." }, { status: 409 });
             const session = await mongoose.startSession();
             try {
                 await session.withTransaction(async () => {
                     const task = await Task.findOneAndUpdate(
-                        { _id: application.task, employer: user.userId, status: "open", isDeleted: { $ne: true }, $or: [{ freelancer: { $exists: false } }, { freelancer: null }] },
-                        { freelancer: application.freelancer, status: "awaiting_funding" },
+                        { _id: application.task, employer: user.userId, status: "open", isDeleted: { $ne: true }, projectStartedAt: { $exists: false }, deadlineAt: { $exists: false }, $or: [{ freelancer: { $exists: false } }, { freelancer: null }] },
+                        { $set: { freelancer: application.freelancer, status: "awaiting_funding", ...deadlineFields } },
                         { returnDocument: "after", session },
                     );
                     if (!task) throw new Error("JOB_NOT_AVAILABLE");

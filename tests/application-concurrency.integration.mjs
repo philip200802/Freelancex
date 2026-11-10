@@ -40,6 +40,8 @@ try {
         description: "Temporary record created by the application concurrency integration test.",
         amount: 100,
         category: "Development",
+        duration: 7,
+        durationUnit: "days",
         status: "open",
         applicationCount: 0,
     });
@@ -54,6 +56,9 @@ try {
     assert.equal(await Application.countDocuments({ task: taskId }), 5);
     assert.equal(await Task.findById(taskId).select("applicationCount").lean().then((task) => task?.applicationCount), 5);
     assert.equal(await Task.findById(taskId).select("status").lean().then((task) => task?.status), "open");
+    const taskAfterApplications = await Task.findById(taskId).select("projectStartedAt deadlineAt").lean();
+    assert.equal(taskAfterApplications?.projectStartedAt, undefined);
+    assert.equal(taskAfterApplications?.deadlineAt, undefined);
 
     await assert.rejects(
         createProjectApplication({

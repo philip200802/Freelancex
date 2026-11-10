@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { getProjectDeadlineCountdown } from "@/lib/project-deadline";
 
 type JobStatus = "open" | "pending_approval" | "awaiting_funding" | "funded" | "in_progress" | "revision_requested" | "submitted" | "completed" | "disputed" | "cancelled";
-type Job = { id: string; title: string; description: string; category: string; amount: number; status: JobStatus; applications: number; createdAt: string };
+type Job = { id: string; title: string; description: string; category: string; amount: number; status: JobStatus; applications: number; createdAt: string; deliveryTime?: string | null; deadlineAt?: string | null };
 type Listing = { jobs: Job[]; activeCount: number; totalCount: number; page: number; pageSize: number; totalPages: number };
 type Filter = "all" | "open" | "funded" | "in_progress" | "revision_requested" | "completed" | "cancelled";
 
@@ -191,7 +192,7 @@ export default function ClientJobsManager() {
                         <td data-label="Job"><Link className="client-job-title" href={`/client/dashboard/projects/${job.id}`}>{job.title}</Link></td>
                         <td data-label="Category">{job.category}</td>
                         <td data-label="Budget" className="client-job-budget">{money.format(job.amount)}</td>
-                        <td data-label="Status"><span className={`status-badge job-status-badge ${statusClass(job.status)}`}>{statusLabels[job.status] || "Project"}</span></td>
+                        <td data-label="Status"><span className={`status-badge job-status-badge ${statusClass(job.status)}`}>{statusLabels[job.status] || "Project"}</span>{job.deliveryTime && <small>{job.deliveryTime}</small>}{job.deadlineAt && <small>Deadline: {job.status === "completed" ? "Completed" : getProjectDeadlineCountdown(job.deadlineAt)}</small>}</td>
                         <td data-label="Applications">{job.applications}</td>
                         <td data-label="Date"><time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</time></td>
                         <td data-label="Actions"><div className="client-job-actions">
@@ -204,7 +205,7 @@ export default function ClientJobsManager() {
                 </table>
                 <div className="client-jobs-cards">{listing.jobs.map((job) => <article className="client-job-card" key={job.id}>
                     <div className="client-job-card-heading"><Link className="client-job-title" href={`/client/dashboard/projects/${job.id}`}>{job.title}</Link><span className={`status-badge job-status-badge ${statusClass(job.status)}`}>{statusLabels[job.status] || "Project"}</span></div>
-                    <div className="client-job-card-details"><span><small>Category</small>{job.category}</span><span><small>Budget</small>{money.format(job.amount)}</span><span><small>Applications</small>{job.applications}</span><span><small>Posted</small><time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</time></span></div>
+                    <div className="client-job-card-details"><span><small>Category</small>{job.category}</span><span><small>Budget</small>{money.format(job.amount)}</span><span><small>Duration</small>{job.deliveryTime || "—"}</span><span><small>Applications</small>{job.applications}</span><span><small>Posted</small><time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</time></span>{job.deadlineAt && <span><small>Deadline</small>{job.status === "completed" ? "Completed" : getProjectDeadlineCountdown(job.deadlineAt)}</span>}</div>
                     <div className="client-job-actions">
                         <Link className="client-job-action" href={`/client/dashboard/projects/${job.id}`}>{["funded", "awaiting_funding", "in_progress", "revision_requested", "submitted", "completed", "disputed"].includes(job.status) ? "View Project" : "View Job"}</Link>
                         {["open", "pending_approval"].includes(job.status) && <Link className="client-job-action" href="/client/dashboard/applications">View Applications</Link>}

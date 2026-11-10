@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-type Task = { id: string; title: string; description: string; amount: number; category: string; status: string; employer?: { id?: string | null; name?: string } | null };
+type Task = { id: string; title: string; description: string; amount: number; duration?: number; durationUnit?: "days" | "weeks"; deliveryTime?: string | null; category: string; status: string; employer?: { id?: string | null; name?: string } | null };
 const money = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 
 export default function JobDetailsView({ jobId, backHref = "/jobs", emptyHref = "/jobs" }: { jobId: string; backHref?: string; emptyHref?: string }) {
@@ -76,7 +76,7 @@ export default function JobDetailsView({ jobId, backHref = "/jobs", emptyHref = 
             {loadState === "error" && <div className="empty-state" role="alert"><p>{error}</p><button className="button button-primary" onClick={() => { setError(""); setLoadState("loading"); setRetryCount((count) => count + 1); }}>Retry</button></div>}
             {loadState === "success" && task && <><div className="eyebrow">{task.category} project</div><div className="detail-grid">
                 <article className="detail-main"><span className="tag">{task.status.replace("_", " ")}</span><h1>{task.title}</h1><p className="detail-description">{task.description}</p><h2>About the project</h2><p className="hero-copy">This project uses milestone-based payments so expectations stay clear from the first conversation through delivery.</p></article>
-                <aside className="detail-aside"><span className="filter-label">Project budget</span><strong className="detail-budget">{money.format(task.amount)}</strong><span className="filter-label">Posted by</span><strong>{task.employer?.name || "FreelanceX client"}</strong>{task.employer?.id && <Link className="button button-quiet" href={`/profiles/${task.employer.id}`}>View client profile</Link>}
+                <aside className="detail-aside"><span className="filter-label">Project budget</span><strong className="detail-budget">{money.format(task.amount)}</strong>{task.deliveryTime && <><span className="filter-label">Delivery time</span><strong>{task.deliveryTime}</strong></>}<span className="filter-label">Posted by</span><strong>{task.employer?.name || "FreelanceX client"}</strong>{task.employer?.id && <Link className="button button-quiet" href={`/profiles/${task.employer.id}`}>View client profile</Link>}
                     {applicationStatus ? <p className="success-message" role="status">{applicationStatus === "pending" ? "Application submitted. Waiting for employer review." : `Application ${applicationStatus}.`}</p> : task.status === "open" ? <><label className="filter-label" htmlFor="application-message">Application message (optional)</label><textarea className="filter-input dashboard-textarea" id="application-message" maxLength={5000} value={applicationMessage} onChange={(event) => setApplicationMessage(event.target.value)} placeholder="Introduce yourself and explain why you are a good fit." /><button className="button button-primary" disabled={isApplying} onClick={applyToProject}>{isApplying ? "Sending..." : "Apply to project"}</button></> : <button className="button button-primary" disabled>Project unavailable</button>}
                     {error && <p className="form-error" role="alert">{error}</p>}
                 </aside>

@@ -12,6 +12,7 @@ import UserPreference from "@/models/UserPreference";
 import Task from "@/models/Task";
 import User from "@/models/User";
 import { queueWorkflowEmailsAfterCommit } from "@/lib/workflow-email";
+import { formatProjectDuration } from "@/lib/project-deadline";
 import {
     ApplicationTransactionError,
     createProjectApplication,
@@ -42,7 +43,7 @@ export async function GET(_request: Request, context: { params: Promise<{ taskId
     try {
         await connectToDatabase();
         const task = await Task.findById(taskId)
-            .select("_id title description amount category status isDeleted createdAt employer freelancer employerNameSnapshot freelancerNameSnapshot")
+            .select("_id title description amount duration durationUnit projectStartedAt deadlineAt category status isDeleted createdAt employer freelancer employerNameSnapshot freelancerNameSnapshot")
             .lean();
         if (!task) {
             return jsonNoStore({ error: "Project not found." }, { status: 404 });
@@ -74,6 +75,11 @@ export async function GET(_request: Request, context: { params: Promise<{ taskId
             title: task.title,
             description: task.description,
             amount: task.amount,
+            duration: task.duration,
+            durationUnit: task.durationUnit,
+            projectStartedAt: task.projectStartedAt,
+            deadlineAt: task.deadlineAt,
+            deliveryTime: task.duration && task.durationUnit ? formatProjectDuration(task.duration, task.durationUnit) : null,
             category: task.category,
             status: task.status,
             createdAt: task.createdAt,

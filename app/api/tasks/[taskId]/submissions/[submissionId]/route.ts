@@ -91,9 +91,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
         return jsonNoStore({ error: "Submission not found." }, { status: 404 });
     }
 
-    let body: { action?: unknown; feedback?: unknown };
+    let body: { action?: unknown; feedback?: unknown; feedbackLinks?: unknown; revisionDeadline?: unknown };
     try {
-        body = await request.json() as { action?: unknown; feedback?: unknown };
+        body = await request.json() as typeof body;
     } catch {
         return jsonNoStore({ error: "A valid review action is required." }, { status: 400 });
     }
@@ -103,6 +103,28 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
     }
     const approved = body.action === "approve";
     const feedback = typeof body.feedback === "string" ? body.feedback.trim() : "";
+    let feedbackLinks: string[] = [];
+    if (body.feedbackLinks !== undefined) {
+        if (!Array.isArray(body.feedbackLinks) || body.feedbackLinks.length > 10 || body.feedbackLinks.some((link) => typeof link !== "string")) {
+            return jsonNoStore({ error: "Provide up to ten valid HTTPS revision evidence links." }, { status: 400 });
+        }
+        feedbackLinks = body.feedbackLinks.map((link) => link.trim());
+        try {
+            if (feedbackLinks.some((link) => new URL(link).protocol !== "https:")) throw new Error("INVALID_LINK");
+        } catch {
+            return jsonNoStore({ error: "Provide up to ten valid HTTPS revision evidence links." }, { status: 400 });
+        }
+    }
+    let revisionDeadline: Date | undefined;
+    if (body.revisionDeadline !== undefined && body.revisionDeadline !== "") {
+        if (typeof body.revisionDeadline !== "string" || !Number.isFinite(Date.parse(body.revisionDeadline))) {
+            return jsonNoStore({ error: "Choose a valid revision deadline." }, { status: 400 });
+        }
+        revisionDeadline = new Date(body.revisionDeadline);
+        if (revisionDeadline.getTime() <= Date.now() || revisionDeadline.getTime() > Date.now() + 365 * 24 * 60 * 60 * 1000) {
+            return jsonNoStore({ error: "The revision deadline must be within the next year." }, { status: 400 });
+        }
+    }
     if (!approved && (!feedback || feedback.length > 5000)) {
         return jsonNoStore({ error: "Revision feedback of 1 to 5000 characters is required." }, { status: 400 });
     }
@@ -152,6 +174,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                     .lean();
                 if (!currentTask || !currentSubmission || currentSubmission.freelancer.toString() !== currentTask.freelancer?.toString()) {
                     throw new Error("REVIEW_STATE_CHANGED");
+                }
+                if (!approved && await ProjectSubmission.countDocuments({ task: taskId, status: "revision_requested" }).session(session) >= 2) {
+                    throw new Error("REVISION_LIMIT_REACHED");
                 }
 
                 commission = commissionForProject(
@@ -217,6 +242,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                     { $set: {
                         status: submissionStatus,
                         ...(approved ? {} : { feedback }),
+                        ...(approved ? {} : { feedbackLinks, ...(revisionDeadline ? { revisionDeadline } : {}) }),
                         ...(approved && feedback ? { feedback } : {}),
                         reviewedBy: user.userId,
                         reviewedAt,
@@ -372,7 +398,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                             actor: user.userId,
                             type: "revision_requested",
                             title: "Revision requested",
-                            body: `The employer requested changes to your submission for "${currentTask.title}".`,
+                            body: `The employer requested changes to your submission for "${currentTask.title}".${revisionDeadline ? ` Please resubmit by ${revisionDeadline.toLocaleDateString()}.` : ""}`,
                             relatedTask: currentTask._id,
                             relatedSubmission: currentSubmission._id,
                             eventKey: `submission:${submissionId}:revision_requested`,
@@ -392,7 +418,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                             subject: "Revision requested for your FreelanceX project",
                             heading: "A revision was requested",
                             message: "The client requested a revision. Review the feedback and submit updated work.",
-                            details: [{ label: "Project", value: currentTask.title }],
+                            details: [
+                                { label: "Project", value: currentTask.title },
+                                ...(revisionDeadline ? [{ label: "Revision deadline", value: revisionDeadline.toLocaleDateString() }] : []),
+                                { label: "Feedback", value: feedback },
+                            ],
                             actionPath: `/freelancer/dashboard/projects/${taskId}`,
                             actionLabel: "Review project",
                             relatedTask: currentTask._id,
@@ -428,6 +458,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                 }
                 return jsonNoStore({ error: "This submission was reviewed by another request. Refresh the project to see its current status." }, { status: 409 });
             }
+            if (error instanceof Error && error.message === "REVISION_LIMIT_REACHED") {
+                return jsonNoStore({ error: "The included two revision rounds have been used. Agree on any additional work before continuing." }, { status: 409 });
+            }
             if (error instanceof Error && error.message === "PAYOUT_PAYMENT_MISSING") {
                 return jsonNoStore({ error: "The project has no matching verified Paystack payment, so it cannot be approved for payout." }, { status: 409 });
             }
@@ -462,7 +495,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ taskI
                 ? "Submission approved and project completed. Freelancer payout is pending manual processing."
                 : "Revision request sent to the freelancer.",
             task: { id: taskId, status: nextStatus },
-            submission: { id: submissionId, status: submissionStatus, feedback: feedback || undefined, reviewedAt },
+            submission: { id: submissionId, status: submissionStatus, feedback: feedback || undefined, feedbackLinks, revisionDeadline, reviewedAt },
             ...(approved && commission ? {
                 payout: {
                     status: "pending",

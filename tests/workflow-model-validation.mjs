@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import BankAccount from "../models/BankAccount.ts";
+import CancellationRequest from "../models/CancellationRequest.ts";
+import DeadlineExtensionRequest from "../models/DeadlineExtensionRequest.ts";
 import EmailOutbox from "../models/EmailOutbox.ts";
+import ProjectSubmission from "../models/ProjectSubmission.ts";
 
 async function main() {
     const queuedEmail = new EmailOutbox({
@@ -55,7 +58,72 @@ async function main() {
     });
     await unverifiedBankAccount.validate();
 
-    console.log("Workflow model validation passed: outbox lifecycle and bank-account verification snapshots.");
+    const task = new mongoose.Types.ObjectId();
+    const employer = new mongoose.Types.ObjectId();
+    const freelancer = new mongoose.Types.ObjectId();
+    const cancellation = new CancellationRequest({
+        task,
+        requestedBy: employer,
+        requestedTo: freelancer,
+        requesterRole: "employer",
+        reason: "changed_requirements",
+        description: "The project requirements changed significantly.",
+        evidenceLinks: ["https://example.test/requirements"],
+    });
+    await cancellation.validate();
+    const invalidCancellation = new CancellationRequest({
+        task,
+        requestedBy: employer,
+        requestedTo: freelancer,
+        requesterRole: "employer",
+        reason: "not-a-valid-reason",
+        description: "Invalid reason.",
+    });
+    await assert.rejects(invalidCancellation.validate());
+    assert.ok(CancellationRequest.schema.indexes().some(([keys, options]) =>
+        keys.task === 1 && keys.status === 1 && options.unique && options.partialFilterExpression?.status === "pending"));
+
+    const extension = new DeadlineExtensionRequest({
+        task,
+        employer,
+        freelancer,
+        currentDeadline: new Date("2026-01-10T00:00:00.000Z"),
+        duration: 2,
+        durationUnit: "weeks",
+        proposedDeadline: new Date("2026-01-24T00:00:00.000Z"),
+        reason: "Additional testing is required.",
+    });
+    await extension.validate();
+    const invalidExtension = new DeadlineExtensionRequest({
+        task,
+        employer,
+        freelancer,
+        currentDeadline: new Date("2026-01-10T00:00:00.000Z"),
+        duration: 0,
+        durationUnit: "days",
+        proposedDeadline: new Date("2026-01-10T00:00:00.000Z"),
+        reason: "Invalid duration.",
+    });
+    await assert.rejects(invalidExtension.validate());
+    assert.ok(DeadlineExtensionRequest.schema.indexes().some(([keys, options]) =>
+        keys.task === 1 && keys.status === 1 && options.unique && options.partialFilterExpression?.status === "pending"));
+
+    const revision = new ProjectSubmission({
+        task,
+        employer,
+        freelancer,
+        submissionNumber: 1,
+        message: "Initial submission.",
+        attachments: [],
+        links: [],
+        status: "revision_requested",
+        feedback: "Please include the missing content.",
+        feedbackLinks: ["https://example.test/revision-notes"],
+        revisionDeadline: new Date("2026-01-15T00:00:00.000Z"),
+    });
+    await revision.validate();
+
+    console.log("Workflow model validation passed: outbox, bank-account snapshots, cancellation/extension request constraints, and revision metadata.");
 }
 
 main().catch((error) => {

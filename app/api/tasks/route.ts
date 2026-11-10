@@ -55,7 +55,7 @@ export async function GET(request: Request) {
         ] }];
         const [tasks, totalCount] = await Promise.all([
             Task.find(filter)
-                .select("title description amount category status createdAt employer employerNameSnapshot")
+                .select("title description amount duration durationUnit category status createdAt employer employerNameSnapshot")
                 .populate("employer", "name")
                 .sort({ createdAt: -1, _id: -1 })
                 .skip((page - 1) * pageSize)
@@ -69,6 +69,8 @@ export async function GET(request: Request) {
                 title: task.title,
                 description: task.description,
                 amount: task.amount,
+                duration: task.duration,
+                durationUnit: task.durationUnit,
                 category: task.category,
                 status: task.status,
                 createdAt: task.createdAt,
@@ -100,7 +102,7 @@ export async function POST(request: Request) {
         if (!parsedBody || typeof parsedBody !== "object" || Array.isArray(parsedBody)) {
             return jsonNoStore({ error: "Project details are invalid." }, { status: 400 });
         }
-        const body = parsedBody as { title?: unknown; description?: unknown; amount?: unknown; category?: unknown };
+        const body = parsedBody as { title?: unknown; description?: unknown; amount?: unknown; category?: unknown; duration?: unknown; durationUnit?: unknown };
         const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() || "";
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
             return jsonNoStore({ error: "A valid idempotency key is required to create a project safely." }, { status: 400 });
@@ -109,18 +111,21 @@ export async function POST(request: Request) {
         const description = typeof body.description === "string" ? body.description.trim() : "";
         const amount = Number(body.amount);
         const category = body.category;
+        const duration = Number(body.duration);
+        const durationUnit = body.durationUnit;
+        const durationDays = duration * (durationUnit === "weeks" ? 7 : 1);
 
-        if (!title || title.length > 180 || !description || description.length > 5000 || !Number.isFinite(amount) || amount <= 0 || !category || typeof category !== "string" || !categories.includes(category as TaskCategory)) {
-            return jsonNoStore({ error: "Title, description, a positive amount, and a valid category are required." }, { status: 400 });
+        if (!title || title.length > 180 || !description || description.length > 5000 || !Number.isFinite(amount) || amount <= 0 || !category || typeof category !== "string" || !categories.includes(category as TaskCategory) || !Number.isSafeInteger(duration) || duration <= 0 || (durationUnit !== "days" && durationUnit !== "weeks") || durationDays > 3650) {
+            return jsonNoStore({ error: "Title, description, a positive amount, a valid category, and a reasonable positive project duration are required." }, { status: 400 });
         }
 
         await connectToDatabase();
         let task;
         try {
-            task = await Task.create({ employer: currentUser.userId, title, description, amount, category, status: "open", createRequestId: idempotencyKey });
+            task = await Task.create({ employer: currentUser.userId, title, description, amount, category, duration, durationUnit, status: "open", createRequestId: idempotencyKey });
         } catch (error) {
             if (error && typeof error === "object" && "code" in error && error.code === 11000) {
-                const existing = await Task.findOne({ employer: currentUser.userId, createRequestId: idempotencyKey }).select("_id title description amount category status createdAt").lean();
+                const existing = await Task.findOne({ employer: currentUser.userId, createRequestId: idempotencyKey }).select("_id title description amount duration durationUnit category status createdAt").lean();
                 if (existing) {
                     try {
                         await Notification.updateOne(
@@ -182,6 +187,8 @@ export async function POST(request: Request) {
                 title: task.title,
                 description: task.description,
                 amount: task.amount,
+                duration: task.duration,
+                durationUnit: task.durationUnit,
                 category: task.category,
                 status: task.status,
                 createdAt: task.createdAt,

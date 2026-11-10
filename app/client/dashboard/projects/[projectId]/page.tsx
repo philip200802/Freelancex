@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProjectSubmissions from "@/components/projects/ProjectSubmissions";
 import ProjectDispute from "@/components/projects/ProjectDispute";
+import ProjectManagementActions from "@/components/projects/ProjectManagementActions";
+import { formatProjectDuration, getProjectDeadlineCountdown } from "@/lib/project-deadline";
 
 type Task = {
     id: string;
@@ -13,6 +15,10 @@ type Task = {
     amount: number;
     category: string;
     status: string;
+    duration?: number;
+    durationUnit?: "days" | "weeks";
+    projectStartedAt?: string;
+    deadlineAt?: string;
     funding?: { status: "funded"; amount: number; currency: string; verifiedAt?: string } | null;
     employer?: { name?: string } | null;
     freelancer?: { name?: string } | null;
@@ -189,6 +195,10 @@ export default function ClientProjectPage() {
                     <div className="dashboard-list">
                         <div className="dashboard-list-row"><div><strong>Client</strong><span>{task.employer?.name || "Project owner"}</span></div></div>
                         <div className="dashboard-list-row"><div><strong>Freelancer</strong><span>{task.freelancer?.name || "Awaiting assignment"}</span></div></div>
+                        {task.duration && task.durationUnit && <div className="dashboard-list-row"><div><strong>Delivery time</strong><span>{formatProjectDuration(task.duration, task.durationUnit)}</span></div></div>}
+                        {task.projectStartedAt && <div className="dashboard-list-row"><div><strong>Accepted on</strong><span>{new Date(task.projectStartedAt).toLocaleDateString()}</span></div></div>}
+                        {task.deadlineAt && <div className="dashboard-list-row"><div><strong>Deadline</strong><span>{new Date(task.deadlineAt).toLocaleDateString()} · {task.status === "completed" ? "Completed" : getProjectDeadlineCountdown(task.deadlineAt)}</span></div></div>}
+                        {task.freelancer && <div className="dashboard-list-row"><div><strong>Work status</strong><span>{statusLabel}</span></div></div>}
                         {task.funding && <div className="dashboard-list-row"><div><strong>Funding</strong><span>Confirmed · {money.format(task.funding.amount)}{task.funding.verifiedAt ? ` · ${new Date(task.funding.verifiedAt).toLocaleDateString()}` : ""}</span></div></div>}
                     </div>
                 </article>
@@ -207,6 +217,7 @@ export default function ClientProjectPage() {
             </div>
 
             <ProjectSubmissions projectId={task.id} role="employer" projectStatus={task.status} onStatusChange={updateTaskStatus} onHistoryLoaded={handleSubmissionHistory} />
+            {task.freelancer && <ProjectManagementActions projectId={task.id} projectStatus={task.status} role="employer" onStatusChange={updateTaskStatus} />}
             {task.freelancer && <ProjectDispute projectId={task.id} projectStatus={task.status} role="employer" />}
 
             {isReviewReady && <section className="dashboard-panel">

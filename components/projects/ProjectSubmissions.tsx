@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getProjectDeadlineCountdown } from "@/lib/project-deadline";
 
 type SubmissionAttachment = {
     fileName: string;
@@ -19,6 +20,8 @@ type Submission = {
     links: string[];
     status: "submitted" | "revision_requested" | "approved";
     feedback?: string;
+    feedbackLinks?: string[];
+    revisionDeadline?: string;
     reviewedAt?: string;
     submittedAt: string;
 };
@@ -96,6 +99,8 @@ export default function ProjectSubmissions({
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [reviewFeedback, setReviewFeedback] = useState("");
+    const [reviewFeedbackLinks, setReviewFeedbackLinks] = useState("");
+    const [revisionDeadline, setRevisionDeadline] = useState("");
     const [commissionAcknowledged, setCommissionAcknowledged] = useState(false);
     const [payoutBreakdown, setPayoutBreakdown] = useState<SubmissionResponse["payoutBreakdown"]>();
     const [bankAccountVerified, setBankAccountVerified] = useState<boolean>();
@@ -204,15 +209,30 @@ export default function ProjectSubmissions({
         setReviewing(action);
         setIsConfirmingApproval(false);
         try {
+            const feedbackLinks = reviewFeedbackLinks.split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
+            if (feedbackLinks.length > 10 || feedbackLinks.some((link) => {
+                try {
+                    return new URL(link).protocol !== "https:";
+                } catch {
+                    return true;
+                }
+            })) throw new Error("Provide up to ten valid HTTPS evidence links, one per line.");
             const response = await fetch(`/api/tasks/${projectId}/submissions/${latestSubmission.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action, feedback: action === "request_revision" ? reviewFeedback : "" }),
+                body: JSON.stringify({
+                    action,
+                    feedback: action === "request_revision" ? reviewFeedback : "",
+                    feedbackLinks: action === "request_revision" ? feedbackLinks : [],
+                    revisionDeadline: action === "request_revision" && revisionDeadline ? new Date(`${revisionDeadline}T23:59:59`).toISOString() : undefined,
+                }),
             });
             const result = await response.json() as SubmissionResponse;
             if (!response.ok) throw new Error(result.error || "Submission review could not be saved.");
             setSuccess(result.message || "Submission review saved.");
             setReviewFeedback("");
+            setReviewFeedbackLinks("");
+            setRevisionDeadline("");
             onStatusChange?.(result.task?.status || (action === "approve" ? "completed" : "revision_requested"));
             setLoadAttempt((attempt) => attempt + 1);
         } catch (reviewError) {
@@ -273,6 +293,8 @@ export default function ProjectSubmissions({
                 <time dateTime={submission.submittedAt}>{new Date(submission.submittedAt).toLocaleString()}</time>
                 <p className="project-submission-message">{submission.message}</p>
                 {submission.feedback && <div className="project-submission-feedback"><strong>Employer feedback</strong><p>{submission.feedback}</p>{submission.reviewedAt && <time dateTime={submission.reviewedAt}>Reviewed {new Date(submission.reviewedAt).toLocaleString()}</time>}</div>}
+                {submission.feedbackLinks && submission.feedbackLinks.length > 0 && <ul className="project-submission-links">{submission.feedbackLinks.map((link) => <li key={`${submission.id}-${link}`}><a href={link} rel="noreferrer" target="_blank">{new URL(link).hostname}</a></li>)}</ul>}
+                {submission.revisionDeadline && <p className="form-hint">Revision deadline: {new Date(submission.revisionDeadline).toLocaleDateString()} · {getProjectDeadlineCountdown(submission.revisionDeadline)}</p>}
                 {submission.attachments.length > 0 && <ul className="project-submission-links">{submission.attachments.map((attachment) => <li key={`${submission.id}-${attachment.url}`}><a href={attachment.url} rel="noreferrer" target="_blank">{attachment.fileName}</a><span>{(attachment.fileSize / (1024 * 1024)).toFixed(1)} MB</span></li>)}</ul>}
                 {submission.links.length > 0 && <ul className="project-submission-links">{submission.links.map((link) => <li key={link}><a href={link} rel="noreferrer" target="_blank">{new URL(link).hostname}</a></li>)}</ul>}
             </li>)}
@@ -314,6 +336,10 @@ export default function ProjectSubmissions({
             <h3>Review the latest submission</h3>
             <label htmlFor={`review-feedback-${projectId}`}>Revision feedback (required to request changes)</label>
             <textarea className="filter-input dashboard-textarea" id={`review-feedback-${projectId}`} maxLength={5000} value={reviewFeedback} onChange={(event) => setReviewFeedback(event.target.value)} placeholder="Explain what needs to be changed before resubmission." />
+            <label htmlFor={`revision-links-${projectId}`}>Supporting links (optional, one HTTPS URL per line)</label>
+            <textarea className="filter-input dashboard-textarea" id={`revision-links-${projectId}`} maxLength={20480} value={reviewFeedbackLinks} onChange={(event) => setReviewFeedbackLinks(event.target.value)} />
+            <label htmlFor={`revision-deadline-${projectId}`}>Revision deadline (optional)</label>
+            <input className="filter-input" id={`revision-deadline-${projectId}`} min={new Date(Date.now() + 60_000).toISOString().slice(0, 10)} onChange={(event) => setRevisionDeadline(event.target.value)} type="date" value={revisionDeadline} />
             {isConfirmingApproval && <p className="form-hint" role="status">Approve this submission and mark the project complete? This does not release or transfer payment.</p>}
             <div className="project-submission-actions">
                 <button className="button button-primary" disabled={reviewing !== null} onClick={() => void reviewSubmission("approve")} type="button">{reviewing === "approve" ? "Approving..." : isConfirmingApproval ? "Confirm approval" : "Approve Submission"}</button>

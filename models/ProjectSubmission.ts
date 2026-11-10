@@ -25,6 +25,8 @@ export interface IProjectSubmission extends Document {
     commissionAmountKobo?: number;
     freelancerNetAmountKobo?: number;
     feedback?: string;
+    feedbackLinks: string[];
+    revisionDeadline?: Date;
     reviewedBy?: mongoose.Types.ObjectId;
     reviewedAt?: Date;
     submittedAt: Date;
@@ -63,6 +65,12 @@ const ProjectSubmissionSchema = new Schema<IProjectSubmission>({
     commissionAmountKobo: { type: Number, min: 0 },
     freelancerNetAmountKobo: { type: Number, min: 0 },
     feedback: { type: String, trim: true, maxlength: 5000 },
+    feedbackLinks: {
+        type: [{ type: String, trim: true, maxlength: 2048 }],
+        default: [],
+        validate: { validator: (links: unknown[]) => links.length <= 10, message: "Revision feedback can include up to ten links." },
+    },
+    revisionDeadline: { type: Date },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User" },
     reviewedAt: { type: Date },
     submittedAt: { type: Date, required: true, default: Date.now },
