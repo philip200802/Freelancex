@@ -1,0 +1,39 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/register/layout,_N_T_/register/employer/layout,_N_T_/register/employer/page,_N_T_/register/employer"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/register/employer/__PAGE__"
+  ],
+  "prefetchHints": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "routeCache": {
+    "key": "/route-cache/APP_PAGE/05aed8e7eecd18fdd85ef0c1923d9ebf4debfa1fe54ab251e0893c8535b49632/$/register/employer",
+    "owner": {
+      "kind": "APP_PAGE",
+      "sourceRoute": "/register/employer/page"
+    },
+    "isFallback": false
+  }
+}

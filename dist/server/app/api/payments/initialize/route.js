@@ -1,0 +1,12 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/payments/initialize/route.js")
+R.c("server/chunks/[root-of-the-server]__1yro6aq5pepaj._.js")
+R.c("server/chunks/Freelancex_lib_mongodb_ts_1z4sw_bx9zrup._.js")
+R.c("server/chunks/[root-of-the-server]__0tf6608__oe14._.js")
+R.c("server/chunks/Freelancex_0_h94f8vmcp9_._.js")
+R.c("server/chunks/[root-of-the-server]__16f92kty8z6ko._.js")
+R.c("server/chunks/Freelancex_1okte6a0z4dsf._.js")
+R.c("server/chunks/Freelancex_lib_payments_paystack_ts_11cc4ch9xr75k._.js")
+R.c("server/chunks/Freelancex_0lyfeq30d-zof._.js")
+R.c("server/chunks/02z0__next-internal_server_app_api_payments_initialize_route_actions_1hv02cit7tz43.js")
+R.m(62264)
+module.exports=R.m(62264).exports

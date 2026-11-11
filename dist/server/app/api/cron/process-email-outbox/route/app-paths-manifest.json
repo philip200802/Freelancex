@@ -1,0 +1,3 @@
+{
+  "/api/cron/process-email-outbox/route": "app/api/cron/process-email-outbox/route.js"
+}

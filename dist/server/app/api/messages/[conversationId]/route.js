@@ -1,0 +1,13 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/messages/[conversationId]/route.js")
+R.c("server/chunks/Freelancex_models_120-loj5u5g83._.js")
+R.c("server/chunks/Freelancex_lib_mongodb_ts_1z4sw_bx9zrup._.js")
+R.c("server/chunks/[root-of-the-server]__0tf6608__oe14._.js")
+R.c("server/chunks/Freelancex_models_1j_uvbd0xvxah._.js")
+R.c("server/chunks/[root-of-the-server]__16f92kty8z6ko._.js")
+R.c("server/chunks/Freelancex_0lyfeq30d-zof._.js")
+R.c("server/chunks/Freelancex_13v3prh-o2aff._.js")
+R.c("server/chunks/Freelancex_1okte6a0z4dsf._.js")
+R.c("server/chunks/Freelancex_lib_cloudinary_ts_10pp4kr_g2mgr._.js")
+R.c("server/chunks/123m_server_app_api_messages_[conversationId]_route_actions_0w9x84u2rcchw.js")
+R.m(34205)
+module.exports=R.m(34205).exports

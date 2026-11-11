@@ -1,8 +1,9 @@
+
 {
   "crons": [
     {
       "path": "/api/cron/process-email-outbox",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }

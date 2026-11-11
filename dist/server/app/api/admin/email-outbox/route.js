@@ -1,0 +1,13 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/admin/email-outbox/route.js")
+R.c("server/chunks/[root-of-the-server]__14emnltxaxrqj._.js")
+R.c("server/chunks/Freelancex_lib_mongodb_ts_1z4sw_bx9zrup._.js")
+R.c("server/chunks/Freelancex_0lyfeq30d-zof._.js")
+R.c("server/chunks/[root-of-the-server]__0z-qfzj4h97iy._.js")
+R.c("server/chunks/Freelancex_1zyugobj8oyrw._.js")
+R.c("server/chunks/[root-of-the-server]__1lsm7kncc7vbd._.js")
+R.c("server/chunks/Freelancex_1okte6a0z4dsf._.js")
+R.c("server/chunks/[root-of-the-server]__16f92kty8z6ko._.js")
+R.c("server/chunks/Freelancex_lib_workflow-email_ts_1jqcfj31cs86v._.js")
+R.c("server/chunks/02z0__next-internal_server_app_api_admin_email-outbox_route_actions_1xa511pouan-2.js")
+R.m(32995)
+module.exports=R.m(32995).exports

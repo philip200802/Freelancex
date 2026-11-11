@@ -1,0 +1,3 @@
+module.exports=[7112,e=>{"use strict";var t=e.i(98607);let r=new t.Schema({project:{type:t.Schema.Types.ObjectId,ref:"Task",required:!0},client:{type:t.Schema.Types.ObjectId,ref:"User"},freelancer:{type:t.Schema.Types.ObjectId,ref:"User"},clientNameSnapshot:{type:String,trim:!0},freelancerNameSnapshot:{type:String,trim:!0},rating:{type:Number,required:!0,min:1,max:5},comment:{type:String,required:!0,trim:!0,maxlength:2e3}},{timestamps:!0});r.index({project:1,client:1},{unique:!0}),r.index({freelancer:1,createdAt:-1});let i=t.default.models.Review||t.default.model("Review",r);e.s(["f",0,i])}];
+
+//# sourceMappingURL=Freelancex_models_Review_ts_0bpj120p-h2dd._.js.map

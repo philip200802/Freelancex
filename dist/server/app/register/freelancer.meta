@@ -1,0 +1,39 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/register/layout,_N_T_/register/freelancer/layout,_N_T_/register/freelancer/page,_N_T_/register/freelancer"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/register/freelancer/__PAGE__"
+  ],
+  "prefetchHints": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "routeCache": {
+    "key": "/route-cache/APP_PAGE/044b6554fabe83391bbf359eca710a268828e42beac89ccc3953ff38ff4877e1/$/register/freelancer",
+    "owner": {
+      "kind": "APP_PAGE",
+      "sourceRoute": "/register/freelancer/page"
+    },
+    "isFallback": false
+  }
+}

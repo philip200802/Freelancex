@@ -1,0 +1,11 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/admin/bank-accounts/route.js")
+R.c("server/chunks/Freelancex_lib_migrate-legacy-bank-accounts_ts_0r5i-v575r939._.js")
+R.c("server/chunks/Freelancex_0lyfeq30d-zof._.js")
+R.c("server/chunks/Freelancex_lib_mongodb_ts_1z4sw_bx9zrup._.js")
+R.c("server/chunks/Freelancex_1okte6a0z4dsf._.js")
+R.c("server/chunks/[root-of-the-server]__16f92kty8z6ko._.js")
+R.c("server/chunks/Freelancex_1x1v21dtc48vk._.js")
+R.c("server/chunks/[root-of-the-server]__0g5e5u0t2_nv3._.js")
+R.c("server/chunks/02z0__next-internal_server_app_api_admin_bank-accounts_route_actions_0f_-vhh_2s_vx.js")
+R.m(28365)
+module.exports=R.m(28365).exports

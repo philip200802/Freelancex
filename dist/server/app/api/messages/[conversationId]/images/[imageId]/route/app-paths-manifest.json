@@ -1,0 +1,3 @@
+{
+  "/api/messages/[conversationId]/images/[imageId]/route": "app/api/messages/[conversationId]/images/[imageId]/route.js"
+}

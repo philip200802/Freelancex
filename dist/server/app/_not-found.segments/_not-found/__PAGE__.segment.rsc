@@ -1,0 +1,32 @@
+1:"/_next/static/chunks/0as1e-emgjq9m.js"
+2:"LoadingBoundaryProvider"
+3:I[49324,["$1"],"$2"]
+4:"NavigationPendingSignal"
+5:I[21734,["$1"],"$4"]
+6:"$Sreact.fragment"
+7:"$Sreact.suspense"
+8:I[21734,["$1"],"default"]
+9:I[49324,["$1"],"default"]
+a:I[94802,["$1"],"default"]
+11:I[23142,["$1"],"OutletBoundary"]
+14:"ViewportBoundary"
+15:I[23142,["$1"],"$14"]
+16:"MetadataBoundary"
+17:I[23142,["$1"],"$16"]
+18:I[72125,["$1"],"IconMark"]
+:HL["/_next/static/chunks/2k_58-z5joxzt.css","style"]
+c:X
+f:X
+f:C
+10:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$6","c",{"children":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":"$0:t:t:d:r:props:children:props:children:1:props:children:props:children:1:props:notFound:0:1:props:style","children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":"$0:t:t:d:r:props:children:props:children:1:props:children:props:children:1:props:notFound:0:1:props:children:props:children:1:props:style","children":404}],["$","div",null,{"style":"$0:t:t:d:r:props:children:props:children:1:props:children:props:children:1:props:notFound:0:1:props:children:props:children:2:props:style","children":["$","h2",null,{"style":"$0:t:t:d:r:props:children:props:children:1:props:children:props:children:1:props:notFound:0:1:props:children:props:children:2:props:children:props:style","children":"This page could not be found."}]}]]}]}]],null,["$","$L11",null,{"children":["$","$7",null,{"name":"Next.MetadataOutlet","children":"$@12"}]}]]}],"p":"$@13","v":null,"s":"$c"}}]]
+d:[["children",{"s":"/_not-found","h":96,"d":{"r":["$","$6","c",{"children":[null,["$","$L9",null,{"parallelRouterKey":"children","template":["$","$La",null,{}]}]]}],"p":"$@e","v":"$f","s":"$c"},"c":"$Q10"}]]
+0:{"t":{"t":{"s":"","h":84,"d":{"r":["$","$L3",null,{"loading":[["$","$L5","l",{}],[],null],"children":["$","$6","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/2k_58-z5joxzt.css","precedence":"next"}],["$","script","script-0",{"src":"/_next/static/chunks/0as1e-emgjq9m.js","async":true}]],["$","html",null,{"lang":"en","children":["$","body",null,{"children":[["$","$7",null,{"fallback":null,"children":["$","$L8",null,{}]}],["$","$L9",null,{"parallelRouterKey":"children","template":["$","$La",null,{}],"notFound":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":{"fontFamily":"system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif,\"Apple Color Emoji\",\"Segoe UI Emoji\"","height":"100vh","textAlign":"center","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"center"},"children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":{"display":"inline-block","margin":"0 20px 0 0","padding":"0 23px 0 0","fontSize":24,"fontWeight":500,"verticalAlign":"top","lineHeight":"49px"},"children":404}],["$","div",null,{"style":{"display":"inline-block"},"children":["$","h2",null,{"style":{"fontSize":14,"fontWeight":400,"lineHeight":"49px","margin":0},"children":"This page could not be found."}]}]]}]}]],[]]}]]}]}]]}]}],"p":"$@b","v":null,"s":"$c"},"c":"$Qd"},"h":{"r":["$","$6","h",{"children":[["$","meta",null,{"name":"robots","content":"noindex"}],["$","$L15",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L17",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$7",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"FreelanceX | Work that moves forward"}],["$","meta","1",{"name":"description","content":"A trusted marketplace for ambitious teams and independent talent."}],["$","link","2",{"rel":"icon","href":"/icon.svg?icon.3y8ecr_lxn33v.svg","sizes":"any","type":"image/svg+xml"}],["$","$L18","3",{}]]}]}],null]}],null]}],"p":"$@19","v":null,"s":"$c"}},"a":"$@1a","u":"$@1b","b":"mn04pUKnBYvpLjNRGOKed"}
+12:null
+c:300
+1b:true
+c:C
+1a:0
+e:"$undefined"
+b:"$undefined"
+19:"$undefined"
+13:"$undefined"

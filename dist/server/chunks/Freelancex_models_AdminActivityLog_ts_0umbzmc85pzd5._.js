@@ -1,0 +1,3 @@
+module.exports=[45571,e=>{"use strict";var t=e.i(98607);let i=new t.Schema({adminId:{type:t.Schema.Types.ObjectId,ref:"User"},adminNameSnapshot:{type:String,required:!0,trim:!0},action:{type:String,required:!0,trim:!0,index:!0},targetUserId:{type:String,trim:!0},targetUserNameSnapshot:{type:String,trim:!0},description:{type:String,required:!0,trim:!0,maxlength:2e3},metadata:{type:t.Schema.Types.Mixed}},{timestamps:{createdAt:!0,updatedAt:!1}});i.index({createdAt:-1}),i.index({adminId:1,createdAt:-1});let r=t.default.models.AdminActivityLog||t.default.model("AdminActivityLog",i);e.s(["f",0,r])}];
+
+//# sourceMappingURL=Freelancex_models_AdminActivityLog_ts_0umbzmc85pzd5._.js.map

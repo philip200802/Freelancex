@@ -1,0 +1,11 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/account/password/route.js")
+R.c("server/chunks/[externals]__1xoj7p--1k948._.js")
+R.c("server/chunks/Freelancex_1nyz2ryg5qf38._.js")
+R.c("server/chunks/Freelancex_lib_mongodb_ts_1z4sw_bx9zrup._.js")
+R.c("server/chunks/13kv_bcryptjs_index_1atcvx5a689m1.js")
+R.c("server/chunks/Freelancex_0lyfeq30d-zof._.js")
+R.c("server/chunks/[root-of-the-server]__16f92kty8z6ko._.js")
+R.c("server/chunks/Freelancex_1okte6a0z4dsf._.js")
+R.c("server/chunks/02z0__next-internal_server_app_api_account_password_route_actions_078tz-egoqrvv.js")
+R.m(4110)
+module.exports=R.m(4110).exports

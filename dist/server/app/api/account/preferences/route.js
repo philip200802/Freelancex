@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/account/preferences/route.js")
+R.c("server/chunks/[root-of-the-server]__0jcr6f5rag5nx._.js")
+R.c("server/chunks/Freelancex_1omqabatcd8vx._.js")
+R.c("server/chunks/Freelancex_lib_mongodb_ts_1z4sw_bx9zrup._.js")
+R.c("server/chunks/Freelancex_0lyfeq30d-zof._.js")
+R.c("server/chunks/[root-of-the-server]__16f92kty8z6ko._.js")
+R.c("server/chunks/Freelancex_1okte6a0z4dsf._.js")
+R.c("server/chunks/02z0__next-internal_server_app_api_account_preferences_route_actions_0ks7sjqfe8fb3.js")
+R.m(88948)
+module.exports=R.m(88948).exports
